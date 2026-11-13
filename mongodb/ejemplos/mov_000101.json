@@ -1,0 +1,25 @@
+{
+  "_id": "mov_000101",
+  "type": "movie",
+  "title": "Ruta al Pacífico",
+  "synopsis": "Dos hermanos recorren Colombia en bus para llegar a Buenaventura antes de que se venda la casa familiar.",
+  "releaseYear": 2021,
+  "genres": ["Drama", "Road movie"],
+  "productionCountries": ["CO", "ES"],
+  "audioLanguages": ["es"],
+  "subtitleLanguages": ["en", "es", "pt"],
+  "ageRating": 12,
+  "coverUrl": "https://cdn.cineconecta.example/covers/mov_000101.jpg",
+  "durationMinutes": 108,
+  "directors": ["Laura Mejía"],
+  "cast": [
+    { "name": "Andrés Cifuentes", "character": "Tomás" },
+    { "name": "Marcela Orozco", "character": "Valeria" },
+    { "name": "Héctor Quintero" }
+  ],
+  "status": "published",
+  "schemaVersion": 1,
+  "createdAt": { "$date": "2026-03-02T15:00:00Z" },
+  "updatedAt": { "$date": "2026-03-05T09:30:00Z" },
+  "publishedAt": { "$date": "2026-03-05T09:30:00Z" }
+}

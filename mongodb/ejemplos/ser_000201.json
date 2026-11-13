@@ -1,0 +1,60 @@
+{
+  "_id": "ser_000201",
+  "type": "series",
+  "title": "Los Hijos del Cauca",
+  "synopsis": "Tres generaciones de una familia cañera enfrentan disputas por la tierra y los secretos de su fundador.",
+  "releaseYear": 2023,
+  "genres": ["Drama", "Familia"],
+  "productionCountries": ["CO"],
+  "audioLanguages": ["es"],
+  "subtitleLanguages": ["en", "es"],
+  "ageRating": 12,
+  "coverUrl": "https://cdn.cineconecta.example/covers/ser_000201.jpg",
+  "seasons": [
+    {
+      "seasonNumber": 1,
+      "description": "La llegada del heredero al ingenio azucarero.",
+      "episodes": [
+        {
+          "episodeId": "epi_0002001",
+          "number": 1,
+          "title": "El regreso",
+          "synopsis": "Mateo vuelve al valle tras diez años de ausencia.",
+          "durationMinutes": 45
+        },
+        {
+          "episodeId": "epi_0002002",
+          "number": 2,
+          "title": "La herencia",
+          "synopsis": "La lectura del testamento divide a la familia.",
+          "durationMinutes": 47
+        }
+      ]
+    },
+    {
+      "seasonNumber": 2,
+      "description": "Las consecuencias del conflicto por el agua.",
+      "episodes": [
+        {
+          "episodeId": "epi_0002003",
+          "number": 1,
+          "title": "Sequía",
+          "synopsis": "El río baja y los cultivos se pierden.",
+          "durationMinutes": 45
+        },
+        {
+          "episodeId": "epi_0002004",
+          "number": 2,
+          "title": "Pacto roto",
+          "synopsis": "Una alianza antigua se quiebra en plena cosecha.",
+          "durationMinutes": 46
+        }
+      ]
+    }
+  ],
+  "status": "published",
+  "schemaVersion": 1,
+  "createdAt": { "$date": "2026-02-10T14:00:00Z" },
+  "updatedAt": { "$date": "2026-06-18T10:00:00Z" },
+  "publishedAt": { "$date": "2026-02-14T08:00:00Z" }
+}

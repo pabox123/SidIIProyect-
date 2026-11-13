@@ -1,0 +1,29 @@
+{
+  "_id": "doc_000301",
+  "type": "documentary",
+  "title": "Voces del Manglar",
+  "synopsis": "Comunidades del Pacífico colombiano cuentan cómo protegen el manglar frente a la tala y la contaminación.",
+  "releaseYear": 2022,
+  "genres": ["Documental", "Naturaleza"],
+  "productionCountries": ["CO", "FR"],
+  "audioLanguages": ["es", "fr"],
+  "subtitleLanguages": ["es", "en"],
+  "ageRating": 0,
+  "coverUrl": "https://cdn.cineconecta.example/covers/doc_000301.jpg",
+  "durationMinutes": 74,
+  "directors": ["Camila Ruiz", "Étienne Marchand"],
+  "topics": ["Conservación", "Comunidades costeras", "Cambio climático"],
+  "interviewees": [
+    { "name": "Doña Rosalba Angulo", "role": "Líder comunitaria" },
+    { "name": "Dr. Julián Pardo", "role": "Biólogo marino" }
+  ],
+  "sources": [
+    { "name": "Consejo Comunitario de Bazán", "institution": "Consejo Comunitario" },
+    { "name": "Instituto de Investigaciones Marinas" }
+  ],
+  "status": "published",
+  "schemaVersion": 1,
+  "createdAt": { "$date": "2026-01-20T16:00:00Z" },
+  "updatedAt": { "$date": "2026-01-25T11:00:00Z" },
+  "publishedAt": { "$date": "2026-01-25T11:00:00Z" }
+}

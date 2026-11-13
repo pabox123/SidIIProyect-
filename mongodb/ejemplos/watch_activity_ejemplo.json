@@ -1,0 +1,25 @@
+{
+  "_id": { "$oid": "674a1f0c9b3d4e2a1c8f5b01" },
+  "accountId": 1042,
+  "profileId": 3087,
+  "contentId": "ser_000201",
+  "contentType": "series",
+  "episodeId": "epi_0002001",
+  "seasonNumber": 1,
+  "episodeNumber": 1,
+  "planId": 2,
+  "subscriptionId": 5518,
+  "startedAt": { "$date": "2026-11-12T20:15:00Z" },
+  "endedAt": { "$date": "2026-11-12T20:48:20Z" },
+  "lastActivityAt": { "$date": "2026-11-12T20:48:20Z" },
+  "durationSeconds": 2700,
+  "watchedSeconds": 1980,
+  "lastPositionSeconds": 2490,
+  "playSegments": [
+    { "from": 0, "to": 1200 },
+    { "from": 1710, "to": 2490 }
+  ],
+  "status": "closed",
+  "completed": true,
+  "completionReason": "threshold_90"
+}
