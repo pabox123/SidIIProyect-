@@ -1,5 +1,4 @@
 // mongosh: use cineconecta; load('01_catalog_items_validator.js')
-
 db.createCollection("catalog_items", {
   validationLevel: "strict",
   validationAction: "error",

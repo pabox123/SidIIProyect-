@@ -1,3 +1,4 @@
+
 // Consultas fundamentales (mongosh: use cineconecta)
 
 // Verificación de contenido al iniciar una reproducción
@@ -7,13 +8,21 @@ db.catalog_items.findOne(
   { title: 1, type: 1, "seasons.$": 1 }
 )
 
-// Consulta 1
+// Consulta 1: búsqueda por título, filtros y paginación
 db.catalog_items.find(
-  { $text: { $search: "pacífico" }, status: "published", ageRating: { $lte: 12 } },
+  {
+    $text: { $search: "pacífico" },
+    status: "published",
+    type: "movie",
+    genres: "Drama",
+    audioLanguages: "es",
+    releaseYear: { $gte: 2015, $lte: 2024 },
+    ageRating: { $lte: 12 }
+  },
   { title: 1, type: 1, coverUrl: 1, releaseYear: 1, ageRating: 1, genres: 1 }
-).limit(20)
+).sort({ releaseYear: -1, _id: 1 }).skip(0).limit(20)
 
-// Consulta 2
+// Consulta 2: explain para comprobar el uso del índice y el orden por _id
 db.catalog_items.find(
   {
     status: "published",
@@ -24,14 +33,15 @@ db.catalog_items.find(
   },
   { title: 1, type: 1, coverUrl: 1, releaseYear: 1, ageRating: 1, genres: 1 }
 ).sort({ releaseYear: -1, _id: 1 }).skip(0).limit(20)
+  .explain("executionStats")
 
-// Consulta 3
+// Consulta 3: filtro por idioma con paginación
 db.catalog_items.find(
   { status: "published", audioLanguages: "es", ageRating: { $lte: 12 } },
   { title: 1, type: 1, coverUrl: 1, releaseYear: 1 }
-).sort({ releaseYear: -1 }).limit(20)
+).sort({ releaseYear: -1, _id: 1 }).skip(0).limit(20)
 
-// Consulta 4
+// Consulta 4: abrir una serie; temporadas y episodios se consultan embebidos
 db.catalog_items.findOne({ _id: "ser_000201", status: "published", ageRating: { $lte: 12 } })
 
 // Consulta 5

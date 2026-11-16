@@ -1,8 +1,7 @@
 // mongosh: use cineconecta; load('02_indices.js')
-
 db.catalog_items.createIndex({ title: "text" }, { default_language: "spanish", name: "ix_catalog_text_title" });
 db.catalog_items.createIndex(
-  { status: 1, type: 1, genres: 1, releaseYear: -1, ageRating: 1 },
+  { status: 1, type: 1, genres: 1, releaseYear: -1, _id: 1, ageRating: 1 },
   { name: "ix_catalog_browse" }
 );
 db.catalog_items.createIndex(

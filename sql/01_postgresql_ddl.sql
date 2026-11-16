@@ -1,3 +1,4 @@
+
 -- CineConecta - DDL PostgreSQL
 -- Ejecutar con la conexión en UTC: SET TIME ZONE 'UTC';
 

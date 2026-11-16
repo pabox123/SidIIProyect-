@@ -1,5 +1,5 @@
--- Verificación relacional al iniciar una reproducción
 
+-- Verificación relacional al iniciar una reproducción
 SELECT s.subscriptionId, s.planId, p.maxAgeRating
   FROM profiles p
   JOIN subscriptions s ON s.accountId = p.accountId
