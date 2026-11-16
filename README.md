@@ -2,6 +2,7 @@
 
 ## Relacional
 - sql/01_postgresql_ddl.sql: tablas, restricciones, triggers y procedimiento (psql -f, o pegar en Supabase/Neon).
+- sql/02_oracle_ddl.sql: DDL compatible con Oracle/SQL Developer para generar el diagrama relacional. No es el script de ejecución de la aplicación; PostgreSQL es el motor implementado.
 - sql/03_consulta_verificacion_reproduccion.sql: consulta de verificación.
 - Se utiliza PostgreSQL como motor relacional. Los perfiles históricos de cuentas con suscripción vencida se cargan con `isActive = 'N'`, porque el trigger exige una suscripción vigente para crear o activar perfiles.
 
