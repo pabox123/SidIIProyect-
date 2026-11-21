@@ -1,6 +1,4 @@
-// mongosh: use cineconecta; load('00_colecciones_auxiliares.js')
-// Las referencias a cuentas, perfiles, planes y suscripciones se validan
-// contra PostgreSQL desde la aplicación.
+
 db.createCollection("user_lists", {
   validationLevel: "strict",
   validationAction: "error",
@@ -102,5 +100,3 @@ db.createCollection("admin_users", {
 
 db.createCollection("counters");
 
-// Generación atómica de ids estables (ejemplo):
-// db.counters.findOneAndUpdate({_id:"content"},{$inc:{seq:1}},{upsert:true,returnDocument:"after"})

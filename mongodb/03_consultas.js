@@ -1,7 +1,4 @@
 
-// Consultas fundamentales (mongosh: use cineconecta)
-
-// Verificación de contenido al iniciar una reproducción
 db.catalog_items.findOne(
   { _id: "ser_000201", status: "published", ageRating: { $lte: 12 },
     "seasons.episodes.episodeId": "epi_0002001" },

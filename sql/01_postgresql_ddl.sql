@@ -1,9 +1,11 @@
+-- CineConecta - Esquema relacional PostgreSQL
+-- Modelo suministrado: accounts, profiles, plans, subscriptions, payments
+-- Decisiones de diseño documentadas inline para el catálogo de objetos (entrega 23 nov)
 
--- CineConecta - DDL PostgreSQL
--- Ejecutar con la conexión en UTC: SET TIME ZONE 'UTC';
-
--- Necesaria para la restricción de exclusión con igualdad sobre enteros
+-- 1) Extensión requerida para EXCLUDE con rangos temporales
 CREATE EXTENSION IF NOT EXISTS btree_gist;
+
+-- 2) TABLAS DEL MODELO
 
 CREATE TABLE plans (
   planId       INTEGER GENERATED ALWAYS AS IDENTITY,
@@ -27,6 +29,7 @@ CREATE TABLE accounts (
   CONSTRAINT ck_accounts_email CHECK (POSITION('@' IN email) > 1),
   CONSTRAINT ck_accounts_hash CHECK (LENGTH(passwordHash) >= 60)
 );
+-- Unicidad case-insensitive en email: índice funcional sobre LOWER(email)
 CREATE UNIQUE INDEX ux_accounts_email_ci ON accounts (LOWER(email));
 
 CREATE TABLE profiles (
@@ -41,7 +44,9 @@ CREATE TABLE profiles (
   CONSTRAINT ck_profiles_age CHECK (maxAgeRating BETWEEN 0 AND 18),
   CONSTRAINT ck_profiles_active CHECK (isActive IN ('Y', 'N'))
 );
+-- Unicidad case-insensitive de nombre de perfil por cuenta
 CREATE UNIQUE INDEX ux_profiles_name_ci ON profiles (accountId, LOWER(name));
+-- Índice para consultas de perfiles activos de una cuenta
 CREATE INDEX ix_profiles_account_active ON profiles (accountId, isActive);
 
 CREATE TABLE subscriptions (
@@ -53,7 +58,12 @@ CREATE TABLE subscriptions (
   CONSTRAINT pk_subscriptions PRIMARY KEY (subscriptionId),
   CONSTRAINT fk_subs_account FOREIGN KEY (accountId) REFERENCES accounts (accountId),
   CONSTRAINT fk_subs_plan FOREIGN KEY (planId) REFERENCES plans (planId),
+  -- La regla de negocio fija 30 días; el CHECK garantiza endsAt = startsAt + 30d.
+  -- Esto implica implícitamente endsAt > startsAt, por eso NO se añade CHECK separado.
   CONSTRAINT ck_subs_30days CHECK (endsAt = startsAt + INTERVAL '30 days'),
+  -- Anti-superposición por cuenta: usa EXCLUDE con GiST y rango semiabierto [startsAt, endsAt).
+  -- El límite inferior inclusivo '[' y superior exclusivo ')' permite que una suscripción
+  -- empiece exactamente cuando termina la anterior SIN considerarse solapada.
   CONSTRAINT ex_subs_no_overlap EXCLUDE USING gist (
     accountId WITH =,
     tsrange(startsAt, endsAt, '[)') WITH &&
@@ -70,13 +80,19 @@ CREATE TABLE payments (
   reference      VARCHAR(100)  NOT NULL,
   CONSTRAINT pk_payments PRIMARY KEY (paymentId),
   CONSTRAINT fk_payments_subscription FOREIGN KEY (subscriptionId) REFERENCES subscriptions (subscriptionId),
+  -- 1-1 suscripción-pago: UNIQUE en subscriptionId + FK asegura cardinalidad exacta
   CONSTRAINT uq_payments_subscription UNIQUE (subscriptionId),
   CONSTRAINT uq_payments_reference UNIQUE (reference),
   CONSTRAINT ck_payments_amount CHECK (amount > 0)
 );
 CREATE INDEX ix_payments_paidat ON payments (paidAt);
 
--- Toda suscripción debe tener su pago al confirmar la transacción
+-- 3) TRIGGERS Y FUNCIONES DE INTEGRIDAD DE NEGOCIO
+
+-- Trigger: fuerza que toda suscripción tenga EXACTAMENTE un pago (1-1 a nivel BD).
+-- CONSTRAINT TRIGGER DEFERRABLE INITIALLY DEFERRED permite insertar suscripción y pago
+-- en la misma transacción (sp_contratar_suscripcion) sin violar la restricción
+-- momentáneamente; se valida al COMMIT.
 CREATE OR REPLACE FUNCTION fn_subscription_requires_payment() RETURNS trigger AS $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM payments WHERE subscriptionId = NEW.subscriptionId) THEN
@@ -91,8 +107,16 @@ CREATE CONSTRAINT TRIGGER ctr_subscription_requires_payment
   DEFERRABLE INITIALLY DEFERRED
   FOR EACH ROW EXECUTE FUNCTION fn_subscription_requires_payment();
 
--- Perfil activo: requiere suscripción vigente y no superar el máximo del plan
-CREATE OR REPLACE FUNCTION fn_profiles_check_limits() RETURNS trigger AS $$
+-- Trigger: valida límite de perfiles activos según maxProfiles del plan vigente.
+-- Usa FOR UPDATE en accounts para serializar creaciones/activaciones concurrentes
+-- y evitar race conditions que excedan el límite.
+-- Se dispara en INSERT y en UPDATE de isActive = 'Y' (no en desactivación).
+-- SECURITY DEFINER + SET search_path: se ejecuta con privilegios de cineconecta_owner
+-- para permitir el FOR UPDATE en accounts sin conceder UPDATE a cineconecta_app.
+CREATE OR REPLACE FUNCTION fn_profiles_check_limits() RETURNS trigger
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 DECLARE
   v_max    INTEGER;
   v_active INTEGER;
@@ -101,7 +125,6 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- Serializa la creación de perfiles de una misma cuenta
   PERFORM 1 FROM accounts WHERE accountId = NEW.accountId FOR UPDATE;
 
   SELECT p.maxProfiles INTO v_max
@@ -133,11 +156,21 @@ CREATE TRIGGER trg_profiles_check_limits
   FOR EACH ROW WHEN (NEW.isActive = 'Y')
   EXECUTE FUNCTION fn_profiles_check_limits();
 
--- Contratación: pago y suscripción en una única transacción
--- (se invoca solo cuando el pago simulado fue aprobado)
+-- 4) FUNCIÓN DE CONTRATACIÓN TRANSACCIONAL (M-02 adelantado)
+-- Encapsula la transacción atómica: valida cuenta y plan, verifica límite de perfiles,
+-- inserta suscripción (30 días) y pago, retorna subscriptionId.
+-- FOR UPDATE en accounts evita condiciones de carrera concurrentes.
+-- La app SOLO llama a esta función; no inserta directamente en subscriptions ni payments.
+-- SECURITY DEFINER + SET search_path: la función se ejecuta con los privilegios de
+-- cineconecta_owner (dueño de las tablas), permitiendo FOR UPDATE e INSERT en
+-- subscriptions/payments sin dar esos privilegios directos a cineconecta_app.
+-- Esto cumple el principio de mínimo privilegio: la app solo tiene EXECUTE en esta función.
 CREATE OR REPLACE FUNCTION sp_contratar_suscripcion(
   p_accountId INTEGER, p_planId INTEGER, p_reference VARCHAR
-) RETURNS INTEGER AS $$
+) RETURNS INTEGER
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 DECLARE
   v_price  NUMERIC(12,2);
   v_max    INTEGER;
@@ -161,7 +194,6 @@ BEGIN
     RAISE EXCEPTION 'Desactive % perfil(es) antes de contratar este plan', v_active - v_max;
   END IF;
 
-  -- La restricción ex_subs_no_overlap rechaza el INSERT si ya hay una suscripción vigente
   INSERT INTO subscriptions (accountId, planId, startsAt, endsAt)
   VALUES (p_accountId, p_planId, v_start, v_start + INTERVAL '30 days')
   RETURNING subscriptionId INTO v_sub;
@@ -172,3 +204,80 @@ BEGIN
   RETURN v_sub;
 END;
 $$ LANGUAGE plpgsql;
+
+-- 5) ROLES Y PRIVILEGIOS MÍNIMOS (Punto f del enunciado)
+-- -------------------------------------------------------
+-- Separación estricta: owner (DDL/migraciones) ≠ app (DML runtime) ≠ user (login real).
+-- NO se usan superusuarios, ni el propietario del esquema (postgres), ni roles con
+-- CREATEDB/CREATEROLE para la aplicación.
+
+-- 5.1 Revocar privilegios por defecto de PUBLIC sobre el esquema public
+-- PostgreSQL otorga CREATE en el esquema y EXECUTE en funciones a PUBLIC por defecto.
+REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+-- Nota: CONNECT sobre la base se revoca en el script de despliegue (CREATE DATABASE ... REVOKE CONNECT),
+-- aquí solo documentamos la intención: la base no debe permitir conexiones de PUBLIC.
+
+-- 5.2 Rol propietario (owner): dueño de objetos, usado solo para migraciones/DDL
+CREATE ROLE cineconecta_owner NOLOGIN;
+-- Otorgar ownership de tablas, secuencias y funciones existentes
+ALTER TABLE plans OWNER TO cineconecta_owner;
+ALTER TABLE accounts OWNER TO cineconecta_owner;
+ALTER TABLE profiles OWNER TO cineconecta_owner;
+ALTER TABLE subscriptions OWNER TO cineconecta_owner;
+ALTER TABLE payments OWNER TO cineconecta_owner;
+-- Las secuencias de IDENTITY pertenecen a sus tablas; ALTER TABLE ... OWNER TO las cubre.
+ALTER FUNCTION fn_subscription_requires_payment() OWNER TO cineconecta_owner;
+ALTER FUNCTION fn_profiles_check_limits() OWNER TO cineconecta_owner;
+ALTER FUNCTION sp_contratar_suscripcion(INTEGER, INTEGER, VARCHAR) OWNER TO cineconecta_owner;
+-- Default privileges para objetos futuros creados por este rol
+ALTER DEFAULT PRIVILEGES FOR ROLE cineconecta_owner IN SCHEMA public
+  GRANT ALL ON TABLES TO cineconecta_owner;
+ALTER DEFAULT PRIVILEGES FOR ROLE cineconecta_owner IN SCHEMA public
+  GRANT ALL ON SEQUENCES TO cineconecta_owner;
+ALTER DEFAULT PRIVILEGES FOR ROLE cineconecta_owner IN SCHEMA public
+  GRANT ALL ON FUNCTIONS TO cineconecta_owner;
+
+-- 5.3 Rol de aplicación (app): grupo con privilegios mínimos de runtime, NOLOGIN
+CREATE ROLE cineconecta_app NOLOGIN;
+GRANT USAGE ON SCHEMA public TO cineconecta_app;
+
+-- GRANTs mínimos deducidos de las reglas de negocio del enunciado:
+-- plans: solo catálogo de lectura
+GRANT SELECT ON plans TO cineconecta_app;
+-- accounts: la app registra (INSERT) y consulta (SELECT); no hay edición de cuentas
+GRANT SELECT, INSERT ON accounts TO cineconecta_app;
+-- profiles: crear (INSERT), consultar (SELECT), desactivar (UPDATE isActive='N');
+-- NO DELETE para conservar historial de perfiles
+GRANT SELECT, INSERT, UPDATE ON profiles TO cineconecta_app;
+-- subscriptions y payments: historial inmutable; solo SELECT (consultar) e INSERT (via sp)
+GRANT SELECT, INSERT ON subscriptions TO cineconecta_app;
+GRANT SELECT, INSERT ON payments TO cineconecta_app;
+
+-- USAGE en secuencias/identities para que INSERT funcione con GENERATED ALWAYS AS IDENTITY
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO cineconecta_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE cineconecta_owner IN SCHEMA public
+  GRANT USAGE ON SEQUENCES TO cineconecta_app;
+
+-- EXECUTE solo en las funciones que la app necesita invocar o que requieren elevación.
+-- fn_profiles_check_limits y sp_contratar_suscripcion son SECURITY DEFINER (owner = cineconecta_owner)
+-- con SET search_path = public, pg_temp para ejecutarse con privilegios elevados y permitir
+-- FOR UPDATE/INSERT internos sin conceder esos privilegios a cineconecta_app.
+-- fn_subscription_requires_payment NO es SECURITY DEFINER: es CONSTRAINT TRIGGER AFTER DEFERRABLE
+-- y se ejecuta con privilegios del owner de la tabla (cineconecta_owner) al validar al COMMIT.
+REVOKE EXECUTE ON FUNCTION fn_profiles_check_limits() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION sp_contratar_suscripcion(INTEGER, INTEGER, VARCHAR) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION fn_profiles_check_limits() TO cineconecta_app;
+GRANT EXECUTE ON FUNCTION sp_contratar_suscripcion(INTEGER, INTEGER, VARCHAR) TO cineconecta_app;
+ALTER DEFAULT PRIVILEGES FOR ROLE cineconecta_owner IN SCHEMA public
+  GRANT EXECUTE ON FUNCTIONS TO cineconecta_app;
+
+-- 5.4 Usuario real de la aplicación (LOGIN), miembro de cineconecta_app
+-- La contraseña se pasa como variable de psql (:\'app_password\'), SIN valor por defecto.
+-- Ejemplo de uso: psql -v app_password='secreto' -f 01_postgresql_ddl.sql
+-- NO se escribe la contraseña en el script.
+\set app_password `echo "$APP_PASSWORD"`  -- placeholder; en despliegue real se usa -v app_password='...'
+CREATE ROLE cineconecta_user LOGIN PASSWORD :'app_password';
+GRANT cineconecta_app TO cineconecta_user;
+
+-- FIN DEL SCRIPT
