@@ -156,48 +156,92 @@ CREATE TRIGGER trg_profiles_check_limits
   FOR EACH ROW WHEN (NEW.isActive = 'Y')
   EXECUTE FUNCTION fn_profiles_check_limits();
 
--- 4) FUNCIÓN DE CONTRATACIÓN TRANSACCIONAL (M-02 adelantado)
--- Encapsula la transacción atómica: valida cuenta y plan, verifica límite de perfiles,
--- inserta suscripción (30 días) y pago, retorna subscriptionId.
--- FOR UPDATE en accounts evita condiciones de carrera concurrentes.
--- La app SOLO llama a esta función; no inserta directamente en subscriptions ni payments.
--- SECURITY DEFINER + SET search_path: la función se ejecuta con los privilegios de
--- cineconecta_owner (dueño de las tablas), permitiendo FOR UPDATE e INSERT en
--- subscriptions/payments sin dar esos privilegios directos a cineconecta_app.
--- Esto cumple el principio de mínimo privilegio: la app solo tiene EXECUTE en esta función.
+-- 4) FUNCIÓN DE CONTRATACIÓN TRANSACCIONAL (M-02)
+-- Propósito: Registra una suscripción y su pago en una sola transacción atómica.
+-- Parámetros:
+--   p_accountId  INTEGER  -- Cuenta que contrata (debe existir).
+--   p_planId     INTEGER  -- Plan a contratar (debe existir).
+--   p_reference  VARCHAR  -- Referencia única del pago (ej. ID de transacción externa).
+--   p_aprobado   BOOLEAN  -- Si el pago simulado fue aprobado (default true). Si false,
+--                          rechaza con error claro SIN insertar suscripción ni pago.
+-- Retorna: subscriptionId de la suscripción creada.
+-- Errores explícitos:
+--   - 'La cuenta % no existe'                      (cuenta inexistente)
+--   - 'El plan % no existe'                        (plan inexistente)
+--   - 'La cuenta % ya tiene una suscripción vigente' (suscripción activa solapada)
+--   - 'Desactive % perfil(es) antes de contratar este plan' (perfiles activos > maxProfiles del plan nuevo)
+--   - 'Pago no aprobado: la contratación requiere pago aprobado' (p_aprobado = false)
+--   - Error nativo de unicidad en payments.reference (referencia duplicada)
+-- Estrategia de bloqueo:
+--   1) SELECT ... FOR UPDATE en accounts (línea 1) serializa llamadas concurrentes
+--      para la misma cuenta. En READ COMMITTED, la 2ª sesión espera el lock y,
+--      al obtenerlo, ve la suscripción insertada por la 1ª (validación d).
+--   2) EXCLUDE constraint (ex_subs_no_overlap) actúa como red de seguridad final
+--      a nivel de índice GiST contra períodos superpuestos.
+--   3) Trigger ctr_subscription_requires_payment (DEFERRABLE) garantiza 1-1
+--      suscripción-pago al COMMIT.
+-- Seguridad: SECURITY DEFINER + SET search_path = public, pg_temp.
+--            Owner = cineconecta_owner. EXECUTE solo para cineconecta_app.
 CREATE OR REPLACE FUNCTION sp_contratar_suscripcion(
-  p_accountId INTEGER, p_planId INTEGER, p_reference VARCHAR
+  p_accountId INTEGER,
+  p_planId INTEGER,
+  p_reference VARCHAR,
+  p_aprobado BOOLEAN DEFAULT true
 ) RETURNS INTEGER
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_price  NUMERIC(12,2);
-  v_max    INTEGER;
-  v_active INTEGER;
-  v_start  TIMESTAMP := CURRENT_TIMESTAMP;
-  v_sub    INTEGER;
+  v_price      NUMERIC(12,2);
+  v_max        INTEGER;
+  v_active     INTEGER;
+  v_start      TIMESTAMP := CURRENT_TIMESTAMP;
+  v_sub        INTEGER;
+  v_has_active BOOLEAN;
 BEGIN
+  -- 1) Bloquear la cuenta para serializar concurrencia (FOR UPDATE)
   PERFORM 1 FROM accounts WHERE accountId = p_accountId FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'La cuenta % no existe', p_accountId;
   END IF;
 
+  -- 2) Validar plan y obtener precio y maxProfiles
   SELECT price, maxProfiles INTO v_price, v_max FROM plans WHERE planId = p_planId;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'El plan % no existe', p_planId;
   END IF;
 
+  -- 3) Validar pago aprobado (simulado)
+  IF NOT p_aprobado THEN
+    RAISE EXCEPTION 'Pago no aprobado: la contratación requiere pago aprobado';
+  END IF;
+
+  -- 4) Validar que NO exista suscripción vigente para esta cuenta
+  --    (startsAt <= now < endsAt). FOR UPDATE ya garantiza que vemos
+  --    la suscripción insertada por una transacción concurrente previa.
+  SELECT EXISTS (
+    SELECT 1 FROM subscriptions
+    WHERE accountId = p_accountId
+      AND startsAt <= v_start
+      AND v_start < endsAt
+  ) INTO v_has_active;
+  IF v_has_active THEN
+    RAISE EXCEPTION 'La cuenta % ya tiene una suscripción vigente', p_accountId;
+  END IF;
+
+  -- 5) Validar límite de perfiles activos vs maxProfiles del NUEVO plan
   SELECT COUNT(*) INTO v_active
     FROM profiles WHERE accountId = p_accountId AND isActive = 'Y';
   IF v_active > v_max THEN
     RAISE EXCEPTION 'Desactive % perfil(es) antes de contratar este plan', v_active - v_max;
   END IF;
 
+  -- 6) Insertar suscripción (30 días exactos: startsAt = now, endsAt = now + 30d)
   INSERT INTO subscriptions (accountId, planId, startsAt, endsAt)
   VALUES (p_accountId, p_planId, v_start, v_start + INTERVAL '30 days')
   RETURNING subscriptionId INTO v_sub;
 
+  -- 7) Insertar pago (monto = precio del plan, reference único)
   INSERT INTO payments (subscriptionId, paidAt, amount, reference)
   VALUES (v_sub, v_start, v_price, p_reference);
 
@@ -229,7 +273,7 @@ ALTER TABLE payments OWNER TO cineconecta_owner;
 -- Las secuencias de IDENTITY pertenecen a sus tablas; ALTER TABLE ... OWNER TO las cubre.
 ALTER FUNCTION fn_subscription_requires_payment() OWNER TO cineconecta_owner;
 ALTER FUNCTION fn_profiles_check_limits() OWNER TO cineconecta_owner;
-ALTER FUNCTION sp_contratar_suscripcion(INTEGER, INTEGER, VARCHAR) OWNER TO cineconecta_owner;
+ALTER FUNCTION sp_contratar_suscripcion(INTEGER, INTEGER, VARCHAR, BOOLEAN) OWNER TO cineconecta_owner;
 -- Default privileges para objetos futuros creados por este rol
 ALTER DEFAULT PRIVILEGES FOR ROLE cineconecta_owner IN SCHEMA public
   GRANT ALL ON TABLES TO cineconecta_owner;
@@ -266,9 +310,9 @@ ALTER DEFAULT PRIVILEGES FOR ROLE cineconecta_owner IN SCHEMA public
 -- fn_subscription_requires_payment NO es SECURITY DEFINER: es CONSTRAINT TRIGGER AFTER DEFERRABLE
 -- y se ejecuta con privilegios del owner de la tabla (cineconecta_owner) al validar al COMMIT.
 REVOKE EXECUTE ON FUNCTION fn_profiles_check_limits() FROM PUBLIC;
-REVOKE EXECUTE ON FUNCTION sp_contratar_suscripcion(INTEGER, INTEGER, VARCHAR) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION sp_contratar_suscripcion(INTEGER, INTEGER, VARCHAR, BOOLEAN) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION fn_profiles_check_limits() TO cineconecta_app;
-GRANT EXECUTE ON FUNCTION sp_contratar_suscripcion(INTEGER, INTEGER, VARCHAR) TO cineconecta_app;
+GRANT EXECUTE ON FUNCTION sp_contratar_suscripcion(INTEGER, INTEGER, VARCHAR, BOOLEAN) TO cineconecta_app;
 ALTER DEFAULT PRIVILEGES FOR ROLE cineconecta_owner IN SCHEMA public
   GRANT EXECUTE ON FUNCTIONS TO cineconecta_app;
 
