@@ -1,6 +1,3 @@
--- CineConecta - DDL Oracle para SQL Developer
--- Uso: importar este archivo únicamente para visualizar el modelo relacional.
--- La implementación ejecutable y las reglas transaccionales están en PostgreSQL.
 
 BEGIN
   EXECUTE IMMEDIATE 'DROP TABLE payments CASCADE CONSTRAINTS';
