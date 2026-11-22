@@ -55,32 +55,32 @@ psql -U postgres -d cineconecta_test_m03 -f sql/04_datos_sinteticos.sql
 
 ### Ejecución de datos de volumen (05_datos_volumen.sql)
 ```bash
-# Default: 100k cuentas, ~200k perfiles, ~150k subs, ~150k pagos
 psql -U postgres -d cineconecta_test_m03 -f sql/05_datos_volumen.sql
 
-# Personalizado:
 psql -U postgres -d cineconecta_test_m03 -v n_accounts=50000 -v batch_size=2000 -f sql/05_datos_volumen.sql
 ```
 Volumen por defecto (100k cuentas): ~100k accounts, ~200k profiles, ~150k subscriptions, ~150k payments. Tiempo típico: 30-60s.
 
 ### Pruebas funcionales con cineconecta_user (datos base)
 ```bash
-# Contratación exitosa (cuenta 6, nunca suscripción)
+# contratación exitosa 
 psql -U cineconecta_user -d cineconecta_test_m03 -c "SELECT sp_contratar_suscripcion(6, 1, 'PAY-TEST-001');"
 
-# Rechazo por suscripción vigente (cuenta 1)
+# rechazo suscripción vigente 
 psql -U cineconecta_user -d cineconecta_test_m03 -c "SELECT sp_contratar_suscripcion(1, 1, 'PAY-TEST-002');"
 
-# Rechazo por exceso perfiles (cuenta 8 con 3 activos, intenta Básico max 1)
+# rechazo por exceso perfiles 
 psql -U cineconecta_user -d cineconecta_test_m03 -c "SELECT sp_contratar_suscripcion(8, 1, 'PAY-TEST-003');"
 ```
 
 ## MongoDB (mongosh, base cineconecta)
-1. mongodb/00_colecciones_auxiliares.js
-2. mongodb/01_catalog_items_validator.js
-3. mongodb/02_indices.js
-4. Ejemplos: mongoimport --db cineconecta --collection catalog_items --file mongodb/ejemplos/mov_000101.json (igual para ser_000201 y doc_000301; watch_activity_ejemplo.json va a watch_activity)
-5. mongodb/03_consultas.js
+Los archivos `00_colecciones_auxiliares.js`, `01_catalog_items_validator.js` y `02_indices.js` son stubs de referencia. El script vigente que crea las cinco colecciones con sus validators e índices es `mongodb/04_create_collections_and_indexes.js`.
+
+1. Inicializar la base y crear colecciones/índices: `mongosh cineconecta mongodb/04_create_collections_and_indexes.js`
+2. Cargar datos sintéticos alineados con los IDs relacionales: `mongosh cineconecta mongodb/05_datos_sinteticos.js`
+3. Ejecutar las consultas de demostración: `mongosh cineconecta mongodb/03_consultas.js`
+
+La carpeta `mongodb/ejemplos/` contiene documentos ilustrativos. `watch_activity_ejemplo.json` usa IDs de demostración independientes del mapa relacional y no forma parte de esta carga integrada.
 
 La consulta 2 incluye `explain("executionStats")` para comparar el plan y verificar el costo del ordenamiento. `type` y `genres` son filtros opcionales: `ix_catalog_browse` es especialmente útil cuando ambos llegan; para búsquedas solo por año o idioma se consideran los índices específicos.
 
