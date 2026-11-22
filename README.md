@@ -1,4 +1,4 @@
-# CineConecta - Entrega 1
+`# CineConecta - Entrega 1
 
 ## Relacional
 - sql/01_postgresql_ddl.sql: tablas, restricciones, triggers, procedimiento **y roles/privilegios mínimos** (psql -f, o pegar en Supabase/Neon).
