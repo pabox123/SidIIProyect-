@@ -7,7 +7,7 @@ Plataforma de streaming de películas, series y documentales con **persistencia 
 
 ---
 
-## 🏗️ Arquitectura
+## Arquitectura
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -75,44 +75,15 @@ cd SidIIProyect-
 
 ```bash
 cd backend
-cp .env.example .env
-# Editar .env con tus credenciales reales
-```
-
-**Variables críticas (PostgreSQL):**
-```env
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USER=cineconecta_user
-POSTGRES_PASSWORD=tu_password_seguro
-POSTGRES_DB=cineconecta
-POSTGRES_SSL=false  # true para Supabase/Neon/Aiven
-```
-
-**Variables críticas (MongoDB):**
-```env
-MONGODB_URI=mongodb://localhost:27017
-MONGODB_DB_NAME=cineconecta
-# Para Atlas: mongodb+srv://user:pass@cluster.xxx.mongodb.net
-```
-
-**Seguridad (¡CAMBIAR EN PRODUCCIÓN!):**
-```env
-JWT_SECRET=clave-super-secreta-minimo-32-caracteres
-BCRYPT_ROUNDS=10
+cp .env
 ```
 
 ### 3. Variables de entorno (Frontend)
 
 ```bash
 cd ../frontend
-cp .env.example .env
+cp .env
 ```
-
-```env
-VITE_API_URL=http://localhost:3000/api
-```
-
 ---
 
 ## 🗄️ Base de Datos - Orden de Ejecución
@@ -390,5 +361,3 @@ Proyecto académico — Universidad Icesi — Sistemas Intensivos en Datos II (2
 - **Krystal** — Modelo MongoDB, validaciones `$jsonSchema`, índices, consultas
 - **Edwar** — Backend NestJS, configuración dual DB, health checks, auth (próximo)
 - **Balanta** — Frontend React, catálogo, reproducción, informes (próximo)
-
-> Desarrollado con ❤️ y TypeScript estricto
