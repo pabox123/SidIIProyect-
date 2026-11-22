@@ -1,87 +1,394 @@
-`# CineConecta - Entrega 1
+# 🎬 CineConecta
 
-## Relacional
-- sql/01_postgresql_ddl.sql: tablas, restricciones, triggers, procedimiento **y roles/privilegios mínimos** (psql -f, o pegar en Supabase/Neon).
-  - Ejecutar pasando la contraseña del usuario de app como variable: `psql -v app_password='tu_secreto' -f sql/01_postgresql_ddl.sql` (o `psql -v app_password="$APP_PASSWORD" -f ...`).
-  - Roles creados: `cineconecta_owner` (DDL, NOLOGIN), `cineconecta_app` (DML runtime, NOLOGIN), `cineconecta_user` (LOGIN, miembro de app).
-  - Privilegios: REVOKE CREATE/EXECUTE de PUBLIC; GRANTs mínimos por tabla.
-  - Funciones SECURITY DEFINER (owner = cineconecta_owner, SET search_path = public, pg_temp):
-    - `sp_contratar_suscripcion`: transacción atómica suscripción+pago, requiere FOR UPDATE/INSERT internos.
-    - `fn_profiles_check_limits`: trigger que valida límite de perfiles, requiere FOR UPDATE en accounts.
-    - La app solo necesita EXECUTE en estas dos funciones; NO tiene UPDATE/INSERT directo en accounts/subscriptions/payments.
-  - `fn_subscription_requires_payment`: CONSTRAINT TRIGGER AFTER DEFERRABLE (no SECURITY DEFINER), se valida al COMMIT con privilegios del owner de la tabla.
-- sql/02_oracle_ddl.sql: DDL compatible con Oracle/SQL Developer para generar el diagrama relacional. No es el script de ejecución de la aplicación; PostgreSQL es el motor implementado.
-- sql/03_consulta_verificacion_reproduccion.sql: consulta de verificación.
-- sql/04_datos_sinteticos.sql: datos base (~15 cuentas) para pruebas funcionales, demo y semilla de IDs para MongoDB.
-- sql/05_datos_volumen.sql: datos masivos parametrizables (default 100k cuentas) para mediciones de optimización (M-05).
-- Se utiliza PostgreSQL como motor relacional. Los perfiles históricos de cuentas con suscripción vencida se cargan con `isActive = 'N'`, porque el trigger exige una suscripción vigente para crear o activar perfiles.
+Plataforma de streaming de películas, series y documentales con **persistencia políglota** (PostgreSQL + MongoDB).
 
-## Datos de prueba (M-03)
+> **Sistemas Intensivos en Datos II** — Proyecto académico colaborativo  
+> Equipo: **Miguel** (BD Relacional), **Krystal** (MongoDB), **Edwar** (Backend/Auth/API), **Balanta** (Frontend/Catálogo/Reproducción/Informes)
 
-### Contraseña de prueba compartida
-Todas las cuentas de datos sintéticos usan la misma contraseña: **`Demo2026!`**
-Hash bcrypt (prefijo $2a$, costo 10): `$2a$10$RpxcT2DZPshwmANBMILFmex8jpg9COHMlEvjtZBJS9D76fgPXZIr2`
+---
 
-### Mapa de IDs (caso de prueba → accountId | profileIds | plan | vigencia)
-Este es el contrato que usan Krystal (Mongo), Edwar y Balanta.
+## 🏗️ Arquitectura
 
-| Caso | Descripción | accountId | profileIds (maxAgeRating, isActive) | plan | vigencia (startsAt → endsAt) |
-|------|-------------|-----------|-------------------------------------|------|------------------------------|
-| 1a | Vigente Básico | 1 | 1 (18, Y) | Básico (1) | 2026-11-10 → 2026-12-10 |
-| 1b | Vigente Estándar | 2 | 2 (18, Y), 3 (12, Y) | Estándar (2) | 2026-11-12 → 2026-12-12 |
-| 1c | Vigente Premium | 3 | 4 (18, Y), 5 (18, Y), 6 (12, Y), 7 (7, Y) | Premium (3) | 2026-11-15 → 2026-12-15 |
-| 2 | Vencida sin vigente | 4 | 8 (18, Y), 9 (12, N) | Básico (1) | 2026-10-01 → 2026-10-31 (vencida) |
-| 3 | Historial consecutivo | 5 | 10 (18, Y), 11 (12, Y), 12 (7, Y) | Básico→Estándar→Premium→Premium (vigente) | 2026-01-01→31, 2026-02-01→03-03, 2026-03-03→04-02, 2026-11-10→12-10 |
-| 4 | Nunca suscripción (demo contratación) | 6 | 13 (18, Y), 14 (12, Y) | — | — |
-| 5 | Sin suscripción (demo concurrencia) | 7 | 15 (18, Y) | — | — |
-| 6 | Exceso perfiles (3 activos) | 8 | 16 (18, Y), 17 (12, Y), 18 (7, Y) | Premium (3) VENCIDA | 2026-09-20 → 2026-10-20 (vencida) |
-| 7 | Básico (max 1) con 1 activo | 9 | 19 (18, Y) | Básico (1) | 2026-11-12 → 2026-12-12 |
-| 8 | Perfiles restrictivos + histórico | 10 | 20 (7, Y), 21 (12, Y), 22 (18, N) | Estándar (2) | 2026-11-08 → 2026-12-08 |
-| 9a | Vence pronto (27 nov) | 11 | 23 (18, Y) | Básico (1) | 2026-10-28 → 2026-11-27 |
-| 9b | Borde semiabierto | 12 | 24 (18, Y) | Básico→Estándar | 2026-11-01→12-01, 2026-12-01→12-31 |
-| — | Cuentas extra | 13 | 25 (18, Y), 26 (12, Y) | Estándar (2) | 2026-11-13 → 2026-12-13 |
-| — | Cuentas extra | 14 | 27 (18, Y), 28 (12, Y) | Premium (3) | 2026-11-14 → 2026-12-14 |
-| — | Cuentas extra | 15 | 29 (18, Y), 30 (7, Y) | Estándar (2) | 2026-11-16 → 2026-12-16 |
-
-### Ejecución de datos base (04_datos_sinteticos.sql)
-```bash
-# Requiere base ya inicializada con 01_postgresql_ddl.sql
-psql -U postgres -d cineconecta_test_m03 -f sql/04_datos_sinteticos.sql
-# O en una línea con 01 y 04:
-psql -U postgres -c "CREATE DATABASE cineconecta_test_m03;" && \
-psql -U postgres -d cineconecta_test_m03 -f sql/01_postgresql_ddl.sql && \
-psql -U postgres -d cineconecta_test_m03 -f sql/04_datos_sinteticos.sql
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        CineConecta API                          │
+│                    (NestJS + TypeScript)                        │
+└─────────────────────────────────┬───────────────────────────────┘
+                                  │
+          ┌───────────────────────┼───────────────────────┐
+          ▼                       ▼                       ▼
+    ┌─────────────┐       ┌─────────────┐       ┌─────────────┐
+    │ PostgreSQL  │       │  MongoDB    │       │   Frontend  │
+    │  (Relacional)│       │ (Documental)│       │  (React+Vite)│
+    └─────────────┘       └─────────────┘       └─────────────┘
+    - accounts              - catalog_items           - Búsqueda
+    - profiles              - user_lists              - Catálogo
+    - plans                 - watch_activity          - Reproducción
+    - subscriptions         - admin_users             - Mi Lista
+    - payments              - counters                - Continuar Viendo
 ```
 
-### Ejecución de datos de volumen (05_datos_volumen.sql)
+### División de Responsabilidades
+
+| Componente | Tecnología | Responsable | Estado |
+|------------|------------|-------------|--------|
+| **BD Relacional** | PostgreSQL 18+ | Miguel | ✅ M-01 a M-04 completados |
+| **BD Documental** | MongoDB 6+ | Krystal | ✅ K-01, K-02 completados |
+| **Backend Base** | NestJS + TypeScript | Edwar | 🔄 **E-01 ACTUAL** |
+| **Auth Clientes** | JWT + bcrypt | Edwar | ⏳ E-02 (próximo) |
+| **Auth Admins** | JWT + MongoDB | Edwar | ⏳ E-03 |
+| **API Cuenta/Subs** | REST + OpenAPI | Edwar | ⏳ E-04 |
+| **Frontend Base** | React 18 + Vite | Balanta | ⏳ B-01 (espera E-01) |
+| **Catálogo/Búsqueda** | React + API | Balanta | ⏳ B-02 |
+
+---
+
+## 📋 Requisitos Previos
+
+- **Node.js** 20+ (LTS recomendado)
+- **pnpm** 9+ (o npm/yarn)
+- **PostgreSQL** 14+ (local, Docker, Supabase, Neon, Aiven...)
+- **MongoDB** 6+ (local, Docker, MongoDB Atlas...)
+- **Git** 2.30+
+
+### Verificar instalaciones
+
 ```bash
-# Default: 100k cuentas, ~200k perfiles, ~150k subs, ~150k pagos
-psql -U postgres -d cineconecta_test_m03 -f sql/05_datos_volumen.sql
-
-# Personalizado:
-psql -U postgres -d cineconecta_test_m03 -v n_accounts=50000 -v batch_size=2000 -f sql/05_datos_volumen.sql
+node --version    # v20.x.x
+pnpm --version    # 9.x.x
+psql --version    # 14+
+mongosh --version # 2.x.x
 ```
-Volumen por defecto (100k cuentas): ~100k accounts, ~200k profiles, ~150k subscriptions, ~150k payments. Tiempo típico: 30-60s.
 
-### Pruebas funcionales con cineconecta_user (datos base)
+---
+
+## ⚙️ Configuración
+
+### 1. Clonar y preparar
+
 ```bash
-# Contratación exitosa (cuenta 6, nunca suscripción)
-psql -U cineconecta_user -d cineconecta_test_m03 -c "SELECT sp_contratar_suscripcion(6, 1, 'PAY-TEST-001');"
-
-# Rechazo por suscripción vigente (cuenta 1)
-psql -U cineconecta_user -d cineconecta_test_m03 -c "SELECT sp_contratar_suscripcion(1, 1, 'PAY-TEST-002');"
-
-# Rechazo por exceso perfiles (cuenta 8 con 3 activos, intenta Básico max 1)
-psql -U cineconecta_user -d cineconecta_test_m03 -c "SELECT sp_contratar_suscripcion(8, 1, 'PAY-TEST-003');"
+git clone <repo-url>
+cd SidIIProyect-
 ```
 
-## MongoDB (mongosh, base cineconecta)
-1. mongodb/00_colecciones_auxiliares.js
-2. mongodb/01_catalog_items_validator.js
-3. mongodb/02_indices.js
-4. Ejemplos: mongoimport --db cineconecta --collection catalog_items --file mongodb/ejemplos/mov_000101.json (igual para ser_000201 y doc_000301; watch_activity_ejemplo.json va a watch_activity)
-5. mongodb/03_consultas.js
+### 2. Variables de entorno (Backend)
 
-La consulta 2 incluye `explain("executionStats")` para comparar el plan y verificar el costo del ordenamiento. `type` y `genres` son filtros opcionales: `ix_catalog_browse` es especialmente útil cuando ambos llegan; para búsquedas solo por año o idioma se consideran los índices específicos.
+```bash
+cd backend
+cp .env.example .env
+# Editar .env con tus credenciales reales
+```
 
-La validación de MongoDB comprueba tipos, formatos y campos obligatorios. La coherencia entre el prefijo del `_id` y `type`, las fechas de publicación/retiro y la unicidad de `seasonNumber`/`episodeNumber` se valida en la aplicación. El índice único de `episodeId` evita repeticiones globales, por lo que también evita que un episodio se repita dentro de una misma serie; no se usa como única garantía de los números de episodio por temporada.
+**Variables críticas (PostgreSQL):**
+```env
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=cineconecta_user
+POSTGRES_PASSWORD=tu_password_seguro
+POSTGRES_DB=cineconecta
+POSTGRES_SSL=false  # true para Supabase/Neon/Aiven
+```
+
+**Variables críticas (MongoDB):**
+```env
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DB_NAME=cineconecta
+# Para Atlas: mongodb+srv://user:pass@cluster.xxx.mongodb.net
+```
+
+**Seguridad (¡CAMBIAR EN PRODUCCIÓN!):**
+```env
+JWT_SECRET=clave-super-secreta-minimo-32-caracteres
+BCRYPT_ROUNDS=10
+```
+
+### 3. Variables de entorno (Frontend)
+
+```bash
+cd ../frontend
+cp .env.example .env
+```
+
+```env
+VITE_API_URL=http://localhost:3000/api
+```
+
+---
+
+## 🗄️ Base de Datos - Orden de Ejecución
+
+### PostgreSQL (ejecutar en orden)
+
+```bash
+# 1. Crear base de datos (como superusuario)
+psql -U postgres -c "CREATE DATABASE cineconecta;"
+
+# 2. Ejecutar DDL + roles + funciones (como superusuario)
+# IMPORTANTE: pasar contraseña del usuario app como variable
+psql -v app_password='tu_password_seguro' -d cineconecta -f database/postgres/01_postgresql_ddl.sql
+
+# 3. Datos sintéticos base (~15 cuentas, 30 perfiles)
+psql -d cineconecta -f database/postgres/04_datos_sinteticos.sql
+
+# 4. (Opcional) Datos de volumen para pruebas de carga
+psql -d cineconecta -f database/postgres/05_datos_volumen.sql
+```
+
+> **Nota:** El script `01_postgresql_ddl.sql` crea los roles `cineconecta_owner` (DDL), `cineconecta_app` (DML runtime) y `cineconecta_user` (LOGIN). La app se conecta **siempre** con `cineconecta_user` (privilegios mínimos).
+
+### MongoDB (ejecutar en orden)
+
+```bash
+# Usar mongosh (no mongo legacy)
+mongosh "mongodb://localhost:27017" database/mongodb/04_create_collections_and_indexes.js
+
+# O para Atlas:
+mongosh "mongodb+srv://user:pass@cluster.xxx.mongodb.net" database/mongodb/04_create_collections_and_indexes.js
+```
+
+El script crea 5 colecciones con validación `$jsonSchema` e índices optimizados:
+- `catalog_items` (películas, series, documentales)
+- `user_lists` ("Mi lista")
+- `watch_activity` (sesiones, "Continuar viendo")
+- `admin_users` (administradores)
+- `counters` (secuencias atómicas para IDs)
+
+### Verificación rápida
+
+```bash
+# PostgreSQL: probar función de contratación (cuenta 6 = sin suscripción previa)
+psql -U cineconecta_user -d cineconecta -c "SELECT sp_contratar_suscripcion(6, 1, 'TEST-001');"
+
+# MongoDB: verificar colecciones
+mongosh "mongodb://localhost:27017/cineconecta" --eval "show collections"
+```
+
+---
+
+## 🚀 Ejecución
+
+### Desarrollo (dos terminales)
+
+**Terminal 1 - Backend:**
+```bash
+cd backend
+pnpm install
+pnpm run start:dev
+```
+> API en `http://localhost:3000/api`  
+> Health check: `http://localhost:3000/api/health`  
+> Swagger (si habilitado): `http://localhost:3000/api/docs`
+
+**Terminal 2 - Frontend:**
+```bash
+cd frontend
+pnpm install
+pnpm run dev
+```
+> App en `http://localhost:5173` (proxy a `/api` → backend)
+
+### Producción
+
+```bash
+# Backend
+cd backend
+pnpm install --prod
+pnpm run build
+NODE_ENV=production pnpm run start:prod
+
+# Frontend
+cd frontend
+pnpm install
+pnpm run build
+# Servir dist/ con nginx, Vercel, Netlify, etc.
+```
+
+---
+
+## 🔍 Verificación Health Check
+
+```bash
+# Health general (PostgreSQL + MongoDB)
+curl http://localhost:3000/api/health
+
+# Solo PostgreSQL
+curl http://localhost:3000/api/health/postgres
+
+# Solo MongoDB
+curl http://localhost:3000/api/health/mongodb
+```
+
+**Respuesta esperada (200 OK):**
+```json
+{
+  "status": "ok",
+  "info": {
+    "postgres": { "status": "up", "latency": "2ms", "pool": {...} },
+    "mongodb": { "status": "up", "latency": "5ms", "collections": 5, "connectionState": "connected" }
+  },
+  "error": {},
+  "details": { ... }
+}
+```
+
+**Si falla (503 Service Unavailable):**
+```json
+{
+  "status": "error",
+  "error": {
+    "postgres": { "status": "down", "error": "connection refused" }
+  }
+}
+```
+
+---
+
+## 📁 Estructura del Proyecto
+
+```
+SidIIProyect-/
+├── backend/                      # NestJS API
+│   ├── src/
+│   │   ├── config/               # Configuración (@nestjs/config)
+│   │   ├── modules/
+│   │   │   ├── db/
+│   │   │   │   ├── postgres/     # Pool pg + Service
+│   │   │   │   └── mongodb/      # Mongoose + Service
+│   │   │   └── health/           # Health checks (Terminus)
+│   │   ├── app.module.ts
+│   │   └── main.ts               # Bootstrap + Helmet + CORS
+│   ├── .env.example
+│   ├── package.json
+│   └── tsconfig.json
+│
+├── frontend/                     # React + Vite + TS
+│   ├── src/
+│   │   ├── components/           # UI reutilizable
+│   │   ├── pages/                # Páginas/ruteo
+│   │   ├── hooks/                # Custom hooks
+│   │   ├── services/             # API clients (axios)
+│   │   ├── context/              # React Context (auth, etc)
+│   │   ├── types/                # TypeScript types
+│   │   ├── App.tsx               # Root + Health demo
+│   │   └── main.tsx              # Entry point
+│   ├── .env.example
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── vite.config.ts
+│
+├── database/
+│   ├── postgres/                 # Scripts SQL (Miguel)
+│   │   ├── 01_postgresql_ddl.sql
+│   │   ├── 04_datos_sinteticos.sql
+│   │   └── 05_datos_volumen.sql
+│   └── mongodb/                  # Scripts mongosh (Krystal)
+│       ├── 04_create_collections_and_indexes.js
+│       └── 03_consultas.js
+│
+├── docs/
+│   ├── architecture/             # Decisiones de arquitectura
+│   └── ai-log/                   # Bitácora de uso de IA
+│
+├── .gitignore
+└── README.md
+```
+
+---
+
+## 🔐 Seguridad
+
+- ✅ **Cero credenciales en código** — todo en `.env` (no versionado)
+- ✅ **Usuario BD con privilegios mínimos** — `cineconecta_user` (no owner)
+- ✅ **Helmet.js** — headers de seguridad HTTP
+- ✅ **CORS configurado** — solo origen frontend permitido
+- ✅ **Validación global** — class-validator en todos los DTOs
+- ✅ **Rate limiting** — (pendiente E-02)
+- ✅ **JWT HttpOnly cookies** — (pendiente E-02)
+
+---
+
+## 🧪 Testing
+
+```bash
+# Backend
+cd backend
+pnpm run test           # Unit tests
+pnpm run test:e2e       # E2E tests
+pnpm run test:cov       # Coverage report
+
+# Frontend
+cd frontend
+pnpm run test           # Vitest
+```
+
+---
+
+## 📚 Documentación Adicional
+
+| Documento | Ubicación | Descripción |
+|-----------|-----------|-------------|
+| Modelo relacional | `docs/M-04_catalogo_objetos_relacional.md` | Catálogo completo tablas, índices, funciones, roles |
+| Modelo MongoDB | `database/mongodb/modelo-datos-mongodb.md` | Colecciones, validaciones, consultas justificadas |
+| Datos de prueba | `README.md` (sección "Datos de prueba") | Mapa de 15 cuentas, perfiles, planes, IDs para Mongo |
+| Consultas Mongo | `database/mongodb/03_consultas.js` | 7 consultas optimizadas con explain |
+
+---
+
+## 🤝 Flujo de Trabajo del Equipo
+
+1. **Miguel/Krystal** completan scripts de BD → suben a `database/`
+2. **Edwar** implementa E-01 base → Backend arranca + health check OK
+3. **Balanta** inicia B-01 (frontend base) consumiendo `/api/health`
+4. **Edwar** implementa E-02 (Auth) → Balanta integra login/registro
+5. **Edwar** implementa E-03 (Admin Auth) → Krystal valida admin_users
+6. **Edwar** implementa E-04 (API Cuenta) → Balanta hace B-02 (Catálogo)
+7. **Balanta** implementa Reproducción + Informes (B-03, B-04)
+
+---
+
+## 🐛 Troubleshooting
+
+### Backend no conecta a PostgreSQL
+```bash
+# Verificar que el usuario existe y tiene permisos
+psql -U cineconecta_user -d cineconecta -c "SELECT current_user, current_database();"
+
+# Verificar variables de entorno
+cat backend/.env | grep POSTGRES
+```
+
+### Backend no conecta a MongoDB
+```bash
+# Probar conexión directa
+mongosh "mongodb://localhost:27017/cineconecta" --eval "db.adminCommand('ping')"
+
+# Verificar URI en .env
+cat backend/.env | grep MONGODB
+```
+
+### Health check devuelve 503
+- Revisar logs del backend (consola donde corre `pnpm run start:dev`)
+- Verificar que ambos servicios estén arriba
+- Comprobar firewall/puertos (5432, 27017)
+
+### Frontend no hace proxy al backend
+- Verificar `vite.config.ts` → `server.proxy`
+- Confirmar que backend corre en puerto 3000
+- Revisar consola del navegador (Network tab)
+
+---
+
+## 📝 Licencia
+
+Proyecto académico — Universidad Icesi — Sistemas Intensivos en Datos II (2026)
+
+---
+
+## 👥 Créditos
+
+- **Miguel** — PostgreSQL DDL, funciones, triggers, roles, datos sintéticos
+- **Krystal** — Modelo MongoDB, validaciones `$jsonSchema`, índices, consultas
+- **Edwar** — Backend NestJS, configuración dual DB, health checks, auth (próximo)
+- **Balanta** — Frontend React, catálogo, reproducción, informes (próximo)
+
+> Desarrollado con ❤️ y TypeScript estricto
