@@ -38,8 +38,15 @@ Plataforma de streaming de películas, series y documentales con **persistencia 
 | **Auth Clientes** | JWT + bcrypt | Edwar | ⏳ E-02 (próximo) |
 | **Auth Admins** | JWT + MongoDB | Edwar | ⏳ E-03 |
 | **API Cuenta/Subs** | REST + OpenAPI | Edwar | ⏳ E-04 |
-| **Frontend Base** | React 18 + Vite | Balanta | ⏳ B-01 (espera E-01) |
-| **Catálogo/Búsqueda** | React + API | Balanta | ⏳ B-02 |
+| **Frontend Base** | React 18 + Vite | Balanta | ✅ B-01 (login, perfiles, navegación, errores) |
+| **Catálogo/Búsqueda** | React + API | Balanta | ✅ B-02 |
+| **Gestión de catálogo (admin)** | React + API | Balanta | ✅ B-03 |
+| **Reproducción / Mi lista / Continuar viendo** | React + API | Balanta | ✅ B-04 |
+| **Informes + CSV** | React + API | Balanta | ✅ B-05 |
+| **Guion de sustentación** | Markdown | Balanta | ✅ B-06 (falta el ensayo del equipo) |
+
+> Detalle de endpoints, reglas y pruebas de B-01 a B-05: `docs/B-01_B-05_frontend_y_api.md`.
+> Guion de la sustentación: `docs/B-06_guion_sustentacion.md`.
 
 ---
 
@@ -302,6 +309,8 @@ pnpm run test           # Vitest
 | Modelo MongoDB | `database/mongodb/modelo-datos-mongodb.md` | Colecciones, validaciones, consultas justificadas |
 | Datos de prueba | `README.md` (sección "Datos de prueba") | Mapa de 15 cuentas, perfiles, planes, IDs para Mongo |
 | Consultas Mongo | `database/mongodb/03_consultas.js` | 7 consultas optimizadas con explain |
+| Frontend y API (B-01 a B-05) | `docs/B-01_B-05_frontend_y_api.md` | Endpoints, reglas de negocio, contrato JWT, pruebas |
+| Guion de sustentación | `docs/B-06_guion_sustentacion.md` | Flujo completo, rechazos, informes, checklist |
 
 ---
 
@@ -360,4 +369,4 @@ Proyecto académico — Universidad Icesi — Sistemas Intensivos en Datos II (2
 - **Miguel** — PostgreSQL DDL, funciones, triggers, roles, datos sintéticos
 - **Krystal** — Modelo MongoDB, validaciones `$jsonSchema`, índices, consultas
 - **Edwar** — Backend NestJS, configuración dual DB, health checks, auth (próximo)
-- **Balanta** — Frontend React, catálogo, reproducción, informes (próximo)
+- **Balanta** — Frontend React, catálogo, administración del catálogo, reproducción, informes y guion de sustentación
