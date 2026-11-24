@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 import helmet from 'helmet';
 import compression from 'compression';
 
@@ -32,10 +33,14 @@ async function bootstrap() {
     }),
   );
 
+  // Errores de BD traducidos a respuestas controladas { statusCode, message }
+  app.useGlobalFilters(new AllExceptionsFilter());
+
   // CORS
   app.enableCors({
     origin: configService.get<string>('FRONTEND_URL') || 'http://localhost:5173',
     credentials: true,
+    exposedHeaders: ['Content-Disposition'],
   });
 
   await app.listen(port);
