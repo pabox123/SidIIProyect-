@@ -1,6 +1,6 @@
 -- CineConecta - Esquema relacional PostgreSQL
 -- Modelo suministrado: accounts, profiles, plans, subscriptions, payments
--- Decisiones de diseño documentadas inline para el catálogo de objetos (entrega 23 nov)
+-- Decisiones de diseño documentadas inline para el catálogo de objetos 
 
 -- 1) Extensión requerida para EXCLUDE con rangos temporales
 CREATE EXTENSION IF NOT EXISTS btree_gist;
@@ -58,12 +58,9 @@ CREATE TABLE subscriptions (
   CONSTRAINT pk_subscriptions PRIMARY KEY (subscriptionId),
   CONSTRAINT fk_subs_account FOREIGN KEY (accountId) REFERENCES accounts (accountId),
   CONSTRAINT fk_subs_plan FOREIGN KEY (planId) REFERENCES plans (planId),
-  -- La regla de negocio fija 30 días; el CHECK garantiza endsAt = startsAt + 30d.
-  -- Esto implica implícitamente endsAt > startsAt, por eso NO se añade CHECK separado.
+
   CONSTRAINT ck_subs_30days CHECK (endsAt = startsAt + INTERVAL '30 days'),
-  -- Anti-superposición por cuenta: usa EXCLUDE con GiST y rango semiabierto [startsAt, endsAt).
-  -- El límite inferior inclusivo '[' y superior exclusivo ')' permite que una suscripción
-  -- empiece exactamente cuando termina la anterior SIN considerarse solapada.
+
   CONSTRAINT ex_subs_no_overlap EXCLUDE USING gist (
     accountId WITH =,
     tsrange(startsAt, endsAt, '[)') WITH &&
@@ -320,7 +317,8 @@ ALTER DEFAULT PRIVILEGES FOR ROLE cineconecta_owner IN SCHEMA public
 -- La contraseña se pasa como variable de psql (:\'app_password\'), SIN valor por defecto.
 -- Ejemplo de uso: psql -v app_password='secreto' -f 01_postgresql_ddl.sql
 -- NO se escribe la contraseña en el script.
-\set app_password `echo "$APP_PASSWORD"`  -- placeholder; en despliegue real se usa -v app_password='...'
+-- \set app_password `echo "$APP_PASSWORD"`  -- placeholder; en despliegue real se usa -v app_password='...'
+-- La línea anterior no funciona en psql (backticks ejecutan shell); se pasa -v app_password=... al invocar.
 CREATE ROLE cineconecta_user LOGIN PASSWORD :'app_password';
 GRANT cineconecta_app TO cineconecta_user;
 
