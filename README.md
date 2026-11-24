@@ -82,14 +82,15 @@ cd SidIIProyect-
 
 ```bash
 cd backend
-cp .env
+cp .env.example .env
+# Completar credenciales de Neon (POSTGRES_*, POSTGRES_SSL=true), MONGODB_URI y JWT_SECRET
 ```
 
 ### 3. Variables de entorno (Frontend)
 
 ```bash
 cd ../frontend
-cp .env
+cp .env.example .env   # opcional: sin .env se usa el proxy /api de Vite
 ```
 ---
 
