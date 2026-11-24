@@ -103,13 +103,16 @@ psql -U postgres -c "CREATE DATABASE cineconecta;"
 
 # 2. Ejecutar DDL + roles + funciones (como superusuario)
 # IMPORTANTE: pasar contraseña del usuario app como variable
-psql -v app_password='tu_password_seguro' -d cineconecta -f database/postgres/01_postgresql_ddl.sql
+psql -v app_password='tu_password_seguro' -d cineconecta -f sql/01_postgresql_ddl.sql
 
 # 3. Datos sintéticos base (~15 cuentas, 30 perfiles)
-psql -d cineconecta -f database/postgres/04_datos_sinteticos.sql
+psql -d cineconecta -f sql/04_datos_sinteticos.sql
 
 # 4. (Opcional) Datos de volumen para pruebas de carga
-psql -d cineconecta -f database/postgres/05_datos_volumen.sql
+psql -d cineconecta -f sql/05_datos_volumen.sql
+
+# 5. Índices y vistas de optimización (M-05)
+psql -d cineconecta -f sql/06_optimizacion_relacional.sql
 ```
 
 > **Nota:** El script `01_postgresql_ddl.sql` crea los roles `cineconecta_owner` (DDL), `cineconecta_app` (DML runtime) y `cineconecta_user` (LOGIN). La app se conecta **siempre** con `cineconecta_user` (privilegios mínimos).
@@ -118,10 +121,13 @@ psql -d cineconecta -f database/postgres/05_datos_volumen.sql
 
 ```bash
 # Usar mongosh (no mongo legacy)
-mongosh "mongodb://localhost:27017" database/mongodb/04_create_collections_and_indexes.js
+mongosh "mongodb://localhost:27017/cineconecta" mongodb/04_create_collections_and_indexes.js
 
 # O para Atlas:
-mongosh "mongodb+srv://user:pass@cluster.xxx.mongodb.net" database/mongodb/04_create_collections_and_indexes.js
+mongosh "mongodb+srv://user:pass@cluster.xxx.mongodb.net/cineconecta" mongodb/04_create_collections_and_indexes.js
+
+# Datos sintéticos alineados con los IDs de PostgreSQL (K-03)
+mongosh "mongodb://localhost:27017/cineconecta" mongodb/05_datos_sinteticos.js
 ```
 
 El script crea 5 colecciones con validación `$jsonSchema` e índices optimizados:
@@ -130,6 +136,45 @@ El script crea 5 colecciones con validación `$jsonSchema` e índices optimizado
 - `watch_activity` (sesiones, "Continuar viendo")
 - `admin_users` (administradores)
 - `counters` (secuencias atómicas para IDs)
+
+### Datos de prueba (M-03)
+
+#### Contraseña de prueba compartida
+Todas las cuentas de datos sintéticos usan la misma contraseña: **`Demo2026!`**
+Hash bcrypt (prefijo $2a$, costo 10): `$2a$10$RpxcT2DZPshwmANBMILFmex8jpg9COHMlEvjtZBJS9D76fgPXZIr2`
+
+#### Mapa de IDs (caso de prueba → accountId | profileIds | plan | vigencia)
+Este es el contrato que usan Krystal (Mongo), Edwar y Balanta.
+
+| Caso | Descripción | accountId | profileIds (maxAgeRating, isActive) | plan | vigencia (startsAt → endsAt) |
+|------|-------------|-----------|-------------------------------------|------|------------------------------|
+| 1a | Vigente Básico | 1 | 1 (18, Y) | Básico (1) | 2026-11-10 → 2026-12-10 |
+| 1b | Vigente Estándar | 2 | 2 (18, Y), 3 (12, Y) | Estándar (2) | 2026-11-12 → 2026-12-12 |
+| 1c | Vigente Premium | 3 | 4 (18, Y), 5 (18, Y), 6 (12, Y), 7 (7, Y) | Premium (3) | 2026-11-15 → 2026-12-15 |
+| 2 | Vencida sin vigente | 4 | 8 (18, Y), 9 (12, N) | Básico (1) | 2026-10-01 → 2026-10-31 (vencida) |
+| 3 | Historial consecutivo | 5 | 10 (18, Y), 11 (12, Y), 12 (7, Y) | Básico→Estándar→Premium→Premium (vigente) | 2026-01-01→31, 2026-02-01→03-03, 2026-03-03→04-02, 2026-11-10→12-10 |
+| 4 | Nunca suscripción (demo contratación) | 6 | 13 (18, Y), 14 (12, Y) | — | — |
+| 5 | Sin suscripción (demo concurrencia) | 7 | 15 (18, Y) | — | — |
+| 6 | Exceso perfiles (3 activos) | 8 | 16 (18, Y), 17 (12, Y), 18 (7, Y) | Premium (3) VENCIDA | 2026-09-20 → 2026-10-20 (vencida) |
+| 7 | Básico (max 1) con 1 activo | 9 | 19 (18, Y) | Básico (1) | 2026-11-12 → 2026-12-12 |
+| 8 | Perfiles restrictivos + histórico | 10 | 20 (7, Y), 21 (12, Y), 22 (18, N) | Estándar (2) | 2026-11-08 → 2026-12-08 |
+| 9a | Vence pronto (27 nov) | 11 | 23 (18, Y) | Básico (1) | 2026-10-28 → 2026-11-27 |
+| 9b | Borde semiabierto | 12 | 24 (18, Y) | Básico→Estándar | 2026-11-01→12-01, 2026-12-01→12-31 |
+| — | Cuentas extra | 13 | 25 (18, Y), 26 (12, Y) | Estándar (2) | 2026-11-13 → 2026-12-13 |
+| — | Cuentas extra | 14 | 27 (18, Y), 28 (12, Y) | Premium (3) | 2026-11-14 → 2026-12-14 |
+| — | Cuentas extra | 15 | 29 (18, Y), 30 (7, Y) | Estándar (2) | 2026-11-16 → 2026-12-16 |
+
+#### Pruebas funcionales con cineconecta_user (datos base)
+```bash
+# Contratación exitosa (cuenta 6, nunca suscripción)
+psql -U cineconecta_user -d cineconecta_test_m03 -c "SELECT sp_contratar_suscripcion(6, 1, 'PAY-TEST-001');"
+
+# Rechazo por suscripción vigente (cuenta 1)
+psql -U cineconecta_user -d cineconecta_test_m03 -c "SELECT sp_contratar_suscripcion(1, 1, 'PAY-TEST-002');"
+
+# Rechazo por exceso perfiles (cuenta 8 con 3 activos, intenta Básico max 1)
+psql -U cineconecta_user -d cineconecta_test_m03 -c "SELECT sp_contratar_suscripcion(8, 1, 'PAY-TEST-003');"
+```
 
 ### Verificación rápida
 
@@ -226,47 +271,31 @@ curl http://localhost:3000/api/health/mongodb
 ```
 SidIIProyect-/
 ├── backend/                      # NestJS API
-│   ├── src/
-│   │   ├── config/               # Configuración (@nestjs/config)
-│   │   ├── modules/
-│   │   │   ├── db/
-│   │   │   │   ├── postgres/     # Pool pg + Service
-│   │   │   │   └── mongodb/      # Mongoose + Service
-│   │   │   └── health/           # Health checks (Terminus)
-│   │   ├── app.module.ts
-│   │   └── main.ts               # Bootstrap + Helmet + CORS
-│   ├── .env.example
-│   ├── package.json
-│   └── tsconfig.json
+│   └── src/
+│       ├── common/               # Contrato JWT, guards, acceso a perfiles, errores, CSV
+│       ├── config/               # Configuración (@nestjs/config)
+│       ├── modules/
+│       │   ├── db/               # Pool pg + Mongoose
+│       │   ├── health/           # Health checks (Terminus)
+│       │   ├── auth/             # Login (provisional hasta E-02/E-03)
+│       │   ├── catalog/          # B-02 catálogo del cliente
+│       │   ├── admin-catalog/    # B-03 gestión del catálogo
+│       │   ├── playback/         # B-04 reproducción, Continuar viendo, Mi lista
+│       │   └── reports/          # B-05 informes + CSV
+│       ├── app.module.ts
+│       └── main.ts               # Bootstrap + Helmet + CORS + filtro de errores
 │
 ├── frontend/                     # React + Vite + TS
-│   ├── src/
-│   │   ├── components/           # UI reutilizable
-│   │   ├── pages/                # Páginas/ruteo
-│   │   ├── hooks/                # Custom hooks
-│   │   ├── services/             # API clients (axios)
-│   │   ├── context/              # React Context (auth, etc)
-│   │   ├── types/                # TypeScript types
-│   │   ├── App.tsx               # Root + Health demo
-│   │   └── main.tsx              # Entry point
-│   ├── .env.example
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── vite.config.ts
+│   └── src/
+│       ├── api/                  # Cliente axios, endpoints y tipos
+│       ├── components/           # Layout, guards de rutas, UI
+│       ├── context/              # Sesión (auth) y avisos
+│       ├── pages/                # Cliente y admin/
+│       └── App.tsx               # Rutas
 │
-├── database/
-│   ├── postgres/                 # Scripts SQL (Miguel)
-│   │   ├── 01_postgresql_ddl.sql
-│   │   ├── 04_datos_sinteticos.sql
-│   │   └── 05_datos_volumen.sql
-│   └── mongodb/                  # Scripts mongosh (Krystal)
-│       ├── 04_create_collections_and_indexes.js
-│       └── 03_consultas.js
-│
-├── docs/
-│   ├── architecture/             # Decisiones de arquitectura
-│   └── ai-log/                   # Bitácora de uso de IA
-│
+├── sql/                          # PostgreSQL (Miguel): DDL, verificación, datos, optimización
+├── mongodb/                      # MongoDB (Krystal): colecciones, datos, consultas, modelo
+├── docs/                         # M-04, M-05, B-01..B-06, documento del proyecto
 ├── .gitignore
 └── README.md
 ```
@@ -306,9 +335,9 @@ pnpm run test           # Vitest
 | Documento | Ubicación | Descripción |
 |-----------|-----------|-------------|
 | Modelo relacional | `docs/M-04_catalogo_objetos_relacional.md` | Catálogo completo tablas, índices, funciones, roles |
-| Modelo MongoDB | `database/mongodb/modelo-datos-mongodb.md` | Colecciones, validaciones, consultas justificadas |
+| Modelo MongoDB | `mongodb/modelo-datos-mongodb.md` | Colecciones, validaciones, consultas justificadas |
 | Datos de prueba | `README.md` (sección "Datos de prueba") | Mapa de 15 cuentas, perfiles, planes, IDs para Mongo |
-| Consultas Mongo | `database/mongodb/03_consultas.js` | 7 consultas optimizadas con explain |
+| Consultas Mongo | `mongodb/03_consultas.js` | 7 consultas optimizadas con explain |
 | Frontend y API (B-01 a B-05) | `docs/B-01_B-05_frontend_y_api.md` | Endpoints, reglas de negocio, contrato JWT, pruebas |
 | Guion de sustentación | `docs/B-06_guion_sustentacion.md` | Flujo completo, rechazos, informes, checklist |
 
