@@ -1,0 +1,8 @@
+﻿planId,plan,tipo_contenido,sesiones,sesiones_completadas,perfiles_distintos,minutos_vistos
+1,Básico,movie,3,2,2,176.67
+2,Estándar,documentary,2,1,2,116.67
+2,Estándar,movie,2,1,2,120
+2,Estándar,series,3,2,3,104.17
+3,Premium,documentary,2,0,2,65
+3,Premium,movie,1,1,1,66.67
+3,Premium,series,1,1,1,41.67
