@@ -1,12 +1,14 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { AdminAuthGuard, ClientAuthGuard } from './auth.guards';
+import { AdminAuthGuard, ClientAuthGuard, JwtAuthGuard } from './auth.guards';
+import { AccountOwnershipGuard, ProfileOwnershipGuard } from './ownership.guards';
 import { ProfileAccessService } from '../access/profile-access.service';
 
 /**
- * Módulo global con la verificación de tokens y de acceso a perfiles.
- * Cualquier módulo puede usar @UseGuards(ClientAuthGuard) o @UseGuards(AdminAuthGuard).
+ * Módulo global con la verificación de tokens y de pertenencia de cuentas/perfiles.
+ * Cualquier módulo puede usar @UseGuards(ClientAuthGuard), @UseGuards(JwtAuthGuard),
+ * @UseGuards(AccountOwnershipGuard), @UseGuards(ProfileOwnershipGuard) o @UseGuards(AdminAuthGuard).
  */
 @Global()
 @Module({
@@ -15,17 +17,32 @@ import { ProfileAccessService } from '../access/profile-access.service';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const secret = config.get<string>('JWT_SECRET');
-        if (!secret && config.get<string>('NODE_ENV') === 'production') {
-          throw new Error('JWT_SECRET es obligatorio en producción');
+        if (!secret) {
+          throw new Error('La variable de entorno JWT_SECRET es obligatoria');
         }
         return {
-          secret: secret || 'dev-only-secret-change-me',
+          secret,
           signOptions: { expiresIn: config.get<string>('JWT_EXPIRES_IN') || '8h' },
         };
       },
     }),
   ],
-  providers: [ClientAuthGuard, AdminAuthGuard, ProfileAccessService],
-  exports: [JwtModule, ClientAuthGuard, AdminAuthGuard, ProfileAccessService],
+  providers: [
+    JwtAuthGuard,
+    ClientAuthGuard,
+    AdminAuthGuard,
+    AccountOwnershipGuard,
+    ProfileOwnershipGuard,
+    ProfileAccessService,
+  ],
+  exports: [
+    JwtModule,
+    JwtAuthGuard,
+    ClientAuthGuard,
+    AdminAuthGuard,
+    AccountOwnershipGuard,
+    ProfileOwnershipGuard,
+    ProfileAccessService,
+  ],
 })
 export class AuthCommonModule {}

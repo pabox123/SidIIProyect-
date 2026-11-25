@@ -27,7 +27,30 @@ async function verify(jwt: JwtService, request: any): Promise<TokenPayload> {
   }
 }
 
-/** Solo deja pasar tokens de clientes y expone request.client. */
+/** Valida cualquier token Bearer válido y expone request.user (y request.client si es cliente). */
+@Injectable()
+export class JwtAuthGuard implements CanActivate {
+  constructor(private readonly jwt: JwtService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest();
+    const payload = await verify(this.jwt, request);
+    if (payload.kind === 'client' && Number.isInteger(payload.sub)) {
+      const client = { accountId: payload.sub, email: payload.email, role: 'client' as const };
+      request.client = client;
+      request.user = client;
+    } else if (payload.kind === 'admin') {
+      const admin = { adminId: payload.sub, email: payload.email, roles: payload.roles ?? [] };
+      request.admin = admin;
+      request.user = admin;
+    } else {
+      throw new UnauthorizedException('Token de sesión no válido');
+    }
+    return true;
+  }
+}
+
+/** Solo deja pasar tokens de clientes y expone request.client y request.user. */
 @Injectable()
 export class ClientAuthGuard implements CanActivate {
   constructor(private readonly jwt: JwtService) {}
@@ -38,7 +61,9 @@ export class ClientAuthGuard implements CanActivate {
     if (payload.kind !== 'client' || !Number.isInteger(payload.sub)) {
       throw new ForbiddenException('Esta operación es solo para clientes');
     }
-    request.client = { accountId: payload.sub, email: payload.email };
+    const client = { accountId: payload.sub, email: payload.email, role: 'client' as const };
+    request.client = client;
+    request.user = client;
     return true;
   }
 }

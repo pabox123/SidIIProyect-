@@ -12,6 +12,7 @@ export type AdminRole = 'catalog_admin' | 'report_viewer';
 export interface ClientTokenPayload {
   sub: number;
   kind: 'client';
+  role?: 'client';
   email: string;
 }
 
@@ -27,6 +28,7 @@ export type TokenPayload = ClientTokenPayload | AdminTokenPayload;
 export interface AuthenticatedClient {
   accountId: number;
   email: string;
+  role: 'client';
 }
 
 export interface AuthenticatedAdmin {
