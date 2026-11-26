@@ -2,9 +2,9 @@ import { Body, Controller, Get, HttpCode, HttpStatus, Post, UseGuards } from '@n
 import { AuthService } from './auth.service';
 import { LoginDto } from './login.dto';
 import { RegisterDto } from './register.dto';
-import { ClientAuthGuard } from '../../common/auth/auth.guards';
-import { CurrentClient } from '../../common/auth/auth.decorators';
-import { AuthenticatedClient } from '../../common/auth/auth.types';
+import { AdminAuthGuard, ClientAuthGuard } from '../../common/auth/auth.guards';
+import { CurrentAdmin, CurrentClient } from '../../common/auth/auth.decorators';
+import { AuthenticatedAdmin, AuthenticatedClient } from '../../common/auth/auth.types';
 
 @Controller()
 export class AuthController {
@@ -32,5 +32,11 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   loginAdmin(@Body() dto: LoginDto) {
     return this.auth.loginAdmin(dto.email, dto.password);
+  }
+
+  @Get('admin/auth/me')
+  @UseGuards(AdminAuthGuard)
+  adminMe(@CurrentAdmin() admin: AuthenticatedAdmin) {
+    return this.auth.adminMe(admin.adminId);
   }
 }

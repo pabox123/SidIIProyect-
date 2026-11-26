@@ -19,6 +19,7 @@ export interface ClientTokenPayload {
 export interface AdminTokenPayload {
   sub: string;
   kind: 'admin';
+  role?: 'admin';
   email: string;
   roles: AdminRole[];
 }

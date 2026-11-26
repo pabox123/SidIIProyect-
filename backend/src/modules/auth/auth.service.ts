@@ -2,6 +2,7 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { ObjectId } from 'mongodb';
 import { PostgresService } from '../db/postgres/postgres.service';
 import { MongodbService } from '../db/mongodb/mongodb.service';
 import { AdminTokenPayload, ClientTokenPayload } from '../../common/auth/auth.types';
@@ -104,24 +105,64 @@ export class AuthService {
   }
 
   async loginAdmin(email: string, password: string) {
+    const normalizedEmail = email.trim().toLowerCase();
+    // Usa el índice único case-insensitive ux_admin_email_ci (collation en, strength 2)
     const admin = await this.mongo
       .getCollection('admin_users')
-      .findOne({ email: email.toLowerCase(), isActive: true });
-    if (!admin || !(await bcrypt.compare(password, admin.passwordHash))) {
+      .findOne({ email: normalizedEmail }, { collation: { locale: 'en', strength: 2 } });
+
+    if (
+      !admin ||
+      admin.isActive !== true ||
+      !(await bcrypt.compare(password, admin.passwordHash))
+    ) {
       throw new UnauthorizedException(INVALID);
     }
+
     await this.mongo
       .getCollection('admin_users')
       .updateOne({ _id: admin._id }, { $set: { lastLoginAt: new Date() } });
+
     const payload: AdminTokenPayload = {
       sub: String(admin._id),
       kind: 'admin',
+      role: 'admin',
       email: admin.email,
       roles: admin.roles,
     };
     return {
       accessToken: await this.jwt.signAsync(payload),
-      admin: { adminId: String(admin._id), fullName: admin.fullName, email: admin.email, roles: admin.roles },
+      admin: {
+        adminId: String(admin._id),
+        fullName: admin.fullName,
+        email: admin.email,
+        roles: admin.roles,
+      },
+    };
+  }
+
+  /** Datos seguros del administrador autenticado (sin passwordHash). */
+  async adminMe(adminId: string) {
+    if (!ObjectId.isValid(adminId)) {
+      throw new UnauthorizedException('Token de administrador no válido');
+    }
+    const admin = await this.mongo
+      .getCollection('admin_users')
+      .findOne(
+        { _id: new ObjectId(adminId), isActive: true },
+        { projection: { passwordHash: 0 } },
+      );
+    if (!admin) {
+      throw new UnauthorizedException('La cuenta de administrador ya no existe o está inactiva');
+    }
+    return {
+      adminId: String(admin._id),
+      fullName: admin.fullName,
+      email: admin.email,
+      roles: admin.roles,
+      isActive: admin.isActive,
+      createdAt: admin.createdAt,
+      lastLoginAt: admin.lastLoginAt ?? null,
     };
   }
 

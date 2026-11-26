@@ -7,8 +7,10 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { ObjectId } from 'mongodb';
 import { ADMIN_ROLES_KEY } from './auth.decorators';
 import { AdminRole, TokenPayload } from './auth.types';
+import { MongodbService } from '../../modules/db/mongodb/mongodb.service';
 
 function extractToken(request: any): string | null {
   const header: string | undefined = request.headers?.authorization;
@@ -68,12 +70,16 @@ export class ClientAuthGuard implements CanActivate {
   }
 }
 
-/** Solo deja pasar tokens de administradores con alguno de los roles pedidos. */
+/**
+ * Solo deja pasar tokens de administradores activos en MongoDB con alguno de los roles pedidos.
+ * Rechaza tokens de cliente con 403 Forbidden y tokens inválidos/inactivos con 401 Unauthorized.
+ */
 @Injectable()
 export class AdminAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly reflector: Reflector,
+    private readonly mongo: MongodbService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -82,15 +88,38 @@ export class AdminAuthGuard implements CanActivate {
     if (payload.kind !== 'admin') {
       throw new ForbiddenException('Esta operación es solo para administradores');
     }
+    if (!ObjectId.isValid(payload.sub)) {
+      throw new UnauthorizedException('Token de administrador no válido');
+    }
+
+    const admin = await this.mongo
+      .getCollection('admin_users')
+      .findOne(
+        { _id: new ObjectId(payload.sub) },
+        { projection: { email: 1, roles: 1, isActive: 1 } },
+      );
+
+    if (!admin || admin.isActive !== true) {
+      throw new UnauthorizedException('La cuenta de administrador no está activa o no existe');
+    }
+
+    const liveRoles: AdminRole[] = Array.isArray(admin.roles) ? admin.roles : [];
     const required =
       this.reflector.getAllAndOverride<AdminRole[]>(ADMIN_ROLES_KEY, [
         context.getHandler(),
         context.getClass(),
       ]) ?? [];
-    if (required.length > 0 && !required.some((role) => payload.roles?.includes(role))) {
+    if (required.length > 0 && !required.some((role) => liveRoles.includes(role))) {
       throw new ForbiddenException(`Necesita uno de estos roles: ${required.join(', ')}`);
     }
-    request.admin = { adminId: payload.sub, email: payload.email, roles: payload.roles ?? [] };
+
+    const authenticatedAdmin = {
+      adminId: String(admin._id),
+      email: admin.email as string,
+      roles: liveRoles,
+    };
+    request.admin = authenticatedAdmin;
+    request.user = authenticatedAdmin;
     return true;
   }
 }

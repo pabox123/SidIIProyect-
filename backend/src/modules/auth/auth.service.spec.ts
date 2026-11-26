@@ -2,6 +2,7 @@ import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { ObjectId } from 'mongodb';
 import { AuthService } from './auth.service';
 import { PostgresService } from '../db/postgres/postgres.service';
 import { MongodbService } from '../db/mongodb/mongodb.service';
@@ -178,6 +179,135 @@ describe('AuthService (E-02 Client Auth)', () => {
     it('devuelve 401 si la cuenta del token ya no existe en PostgreSQL', async () => {
       pg.query.mockResolvedValueOnce({ rows: [] });
       await expect(service.me(999)).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('loginAdmin & adminMe (E-03 Admin Auth)', () => {
+    let adminCollection: { findOne: jest.Mock; updateOne: jest.Mock };
+
+    beforeEach(() => {
+      adminCollection = {
+        findOne: jest.fn(),
+        updateOne: jest.fn().mockResolvedValue({ modifiedCount: 1 }),
+      };
+      mongo.getCollection.mockReturnValue(adminCollection);
+    });
+
+    it('autentica un administrador activo con bcryptjs, actualiza lastLoginAt y emite JWT sin passwordHash', async () => {
+      const adminId = new ObjectId('692000000000000000000001');
+      const hash = await bcrypt.hash('AdminClave2026!', 4);
+      adminCollection.findOne.mockResolvedValueOnce({
+        _id: adminId,
+        email: 'admin@cineconecta.example',
+        fullName: 'Administración de catálogo',
+        passwordHash: hash,
+        roles: ['catalog_admin'],
+        isActive: true,
+      });
+
+      const result = await service.loginAdmin('  ADMIN@CineConecta.example ', 'AdminClave2026!');
+
+      expect(mongo.getCollection).toHaveBeenCalledWith('admin_users');
+      expect(adminCollection.findOne).toHaveBeenCalledWith(
+        { email: 'admin@cineconecta.example' },
+        { collation: { locale: 'en', strength: 2 } },
+      );
+      expect(adminCollection.updateOne).toHaveBeenCalledWith(
+        { _id: adminId },
+        { $set: { lastLoginAt: expect.any(Date) } },
+      );
+      expect(jwt.signAsync).toHaveBeenCalledWith({
+        sub: String(adminId),
+        kind: 'admin',
+        role: 'admin',
+        email: 'admin@cineconecta.example',
+        roles: ['catalog_admin'],
+      });
+      expect(result).toEqual({
+        accessToken: 'signed-jwt-token',
+        admin: {
+          adminId: String(adminId),
+          fullName: 'Administración de catálogo',
+          email: 'admin@cineconecta.example',
+          roles: ['catalog_admin'],
+        },
+      });
+      expect((result.admin as any).passwordHash).toBeUndefined();
+    });
+
+    it('devuelve el mismo error genérico 401 si el admin no existe, está inactivo o la contraseña falla', async () => {
+      const hash = await bcrypt.hash('ClaveReal2026!', 4);
+
+      // 1) Inexistente
+      adminCollection.findOne.mockResolvedValueOnce(null);
+      await expect(service.loginAdmin('nadie@cineconecta.example', 'ClaveReal2026!')).rejects.toThrow(
+        new UnauthorizedException('Correo o contraseña incorrectos'),
+      );
+
+      // 2) Inactivo (isActive: false)
+      adminCollection.findOne.mockResolvedValueOnce({
+        _id: new ObjectId('692000000000000000000002'),
+        email: 'inactivo@cineconecta.example',
+        fullName: 'Inactivo',
+        passwordHash: hash,
+        roles: ['catalog_admin'],
+        isActive: false,
+      });
+      await expect(service.loginAdmin('inactivo@cineconecta.example', 'ClaveReal2026!')).rejects.toThrow(
+        new UnauthorizedException('Correo o contraseña incorrectos'),
+      );
+
+      // 3) Contraseña incorrecta
+      adminCollection.findOne.mockResolvedValueOnce({
+        _id: new ObjectId('692000000000000000000003'),
+        email: 'admin@cineconecta.example',
+        fullName: 'Admin',
+        passwordHash: hash,
+        roles: ['catalog_admin'],
+        isActive: true,
+      });
+      await expect(service.loginAdmin('admin@cineconecta.example', 'Incorrecta!')).rejects.toThrow(
+        new UnauthorizedException('Correo o contraseña incorrectos'),
+      );
+    });
+
+    it('adminMe devuelve el perfil seguro del administrador activo sin passwordHash', async () => {
+      const adminId = new ObjectId('692000000000000000000001');
+      const createdAt = new Date('2026-01-05T12:00:00Z');
+      const lastLoginAt = new Date('2026-11-25T18:00:00Z');
+      adminCollection.findOne.mockResolvedValueOnce({
+        _id: adminId,
+        email: 'admin@cineconecta.example',
+        fullName: 'Administración de catálogo',
+        roles: ['catalog_admin'],
+        isActive: true,
+        createdAt,
+        lastLoginAt,
+      });
+
+      const result = await service.adminMe(String(adminId));
+
+      expect(adminCollection.findOne).toHaveBeenCalledWith(
+        { _id: adminId, isActive: true },
+        { projection: { passwordHash: 0 } },
+      );
+      expect(result).toEqual({
+        adminId: String(adminId),
+        fullName: 'Administración de catálogo',
+        email: 'admin@cineconecta.example',
+        roles: ['catalog_admin'],
+        isActive: true,
+        createdAt,
+        lastLoginAt,
+      });
+      expect((result as any).passwordHash).toBeUndefined();
+    });
+
+    it('adminMe rechaza con 401 si el ID es inválido o el admin está inactivo/inexistente', async () => {
+      await expect(service.adminMe('id-invalido')).rejects.toThrow(UnauthorizedException);
+
+      adminCollection.findOne.mockResolvedValueOnce(null);
+      await expect(service.adminMe('692000000000000000000099')).rejects.toThrow(UnauthorizedException);
     });
   });
 });
