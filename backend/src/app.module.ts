@@ -6,6 +6,7 @@ import { MongodbModule } from './modules/db/mongodb/mongodb.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthCommonModule } from './common/auth/auth-common.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { AccountModule } from './modules/account/account.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { AdminCatalogModule } from './modules/admin-catalog/admin-catalog.module';
 import { PlaybackModule } from './modules/playback/playback.module';
@@ -29,6 +30,7 @@ import { ReportsModule } from './modules/reports/reports.module';
     // Autenticación (contrato JWT + guards) y módulos de la aplicación
     AuthCommonModule,
     AuthModule,
+    AccountModule,
     CatalogModule,
     AdminCatalogModule,
     PlaybackModule,
