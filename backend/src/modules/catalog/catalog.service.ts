@@ -27,13 +27,14 @@ export class CatalogService {
   }
 
   /**
-   * Búsqueda por título con filtros. Solo contenidos publicados y con clasificación
+   * Búsqueda por título con filtros. El enunciado exige perfil activo y suscripción
+   * vigente (se verifica en PostgreSQL). Solo contenidos publicados y con clasificación
    * permitida para el perfil (maxAgeRating sale de PostgreSQL). Equivale a las consultas
    * 1 y 3 de mongodb/03_consultas.js y usa ix_catalog_text_title / ix_catalog_browse /
    * ix_catalog_language.
    */
   async search(accountId: number, dto: SearchCatalogDto) {
-    const profile = await this.access.getActiveProfile(accountId, dto.profileId);
+    const profile = await this.access.getPlaybackContext(accountId, dto.profileId);
     const filter: Record<string, unknown> = {
       status: 'published',
       ageRating: { $lte: profile.maxAgeRating },
@@ -88,7 +89,7 @@ export class CatalogService {
    * sola lectura (consulta 4). Rechaza retirados/borradores y clasificaciones no permitidas.
    */
   async detail(accountId: number, profileId: number, contentId: string) {
-    const profile = await this.access.getActiveProfile(accountId, profileId);
+    const profile = await this.access.getPlaybackContext(accountId, profileId);
     const item = await this.items.findOne({ _id: contentId as any });
     if (!item || item.status !== 'published') {
       throw new NotFoundException('El contenido no existe o no está disponible');

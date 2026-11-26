@@ -14,6 +14,7 @@ interface AuthValue {
   activeProfile: Profile | null;
   loginClient: (email: string, password: string) => Promise<void>;
   loginAdmin: (email: string, password: string) => Promise<void>;
+  register: (fullName: string, email: string, password: string) => Promise<void>;
   selectProfile: (profile: Profile) => void;
   refreshMe: () => Promise<void>;
   logout: () => void;
@@ -98,6 +99,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refreshMe],
   );
 
+  const register = useCallback(
+    async (fullName: string, email: string, password: string) => {
+      const { accessToken } = await authApi.register(fullName, email, password);
+      tokenStore.set(accessToken);
+      write(ADMIN_KEY, null);
+      write(PROFILE_KEY, null);
+      setProfileId(null);
+      await refreshMe();
+    },
+    [refreshMe],
+  );
+
   const loginAdmin = useCallback(async (email: string, password: string) => {
     const { accessToken, admin } = await authApi.adminLogin(email, password);
     tokenStore.set(accessToken);
@@ -118,8 +131,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session, profileId]);
 
   const value = useMemo(
-    () => ({ session, loading, activeProfile, loginClient, loginAdmin, selectProfile, refreshMe, logout }),
-    [session, loading, activeProfile, loginClient, loginAdmin, selectProfile, refreshMe, logout],
+    () => ({ session, loading, activeProfile, loginClient, loginAdmin, register, selectProfile, refreshMe, logout }),
+    [session, loading, activeProfile, loginClient, loginAdmin, register, selectProfile, refreshMe, logout],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

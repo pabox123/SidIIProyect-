@@ -1,6 +1,10 @@
 import { api } from './client';
 import type {
+  AccountProfiles,
+  AccountSubscriptions,
   AdminUser,
+  Plan,
+  SubscriptionRecord,
   CatalogFilters,
   CatalogItem,
   ConsumptionRow,
@@ -37,6 +41,20 @@ export const authApi = {
   adminLogin: (email: string, password: string) =>
     api.post<{ accessToken: string; admin: AdminUser }>('/admin/auth/login', { email, password }).then((r) => r.data),
   me: () => api.get<Me>('/auth/me').then((r) => r.data),
+  register: (fullName: string, email: string, password: string) =>
+    api.post<{ accessToken: string }>('/auth/register', { fullName, email, password }).then((r) => r.data),
+};
+
+export const accountApi = {
+  plans: () => api.get<Plan[]>('/plans').then((r) => r.data),
+  subscriptions: () => api.get<AccountSubscriptions>('/account/subscriptions').then((r) => r.data),
+  subscribe: (planId: number, approved: boolean) =>
+    api.post<SubscriptionRecord>('/account/subscriptions', { planId, approved }).then((r) => r.data),
+  profiles: () => api.get<AccountProfiles>('/account/profiles').then((r) => r.data),
+  createProfile: (name: string, maxAgeRating: number) =>
+    api.post('/account/profiles', { name, maxAgeRating }).then((r) => r.data),
+  setProfileActive: (profileId: number, active: boolean) =>
+    api.patch(`/account/profiles/${profileId}/${active ? 'activate' : 'deactivate'}`).then((r) => r.data),
 };
 
 export const catalogApi = {

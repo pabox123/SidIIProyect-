@@ -10,6 +10,7 @@ import { HomePage } from './pages/HomePage';
 import { TitlePage } from './pages/TitlePage';
 import { PlayerPage } from './pages/PlayerPage';
 import { MyListPage } from './pages/MyListPage';
+import { AccountPage } from './pages/AccountPage';
 import { StatusPage } from './pages/StatusPage';
 import { AdminCatalogPage } from './pages/admin/AdminCatalogPage';
 import { AdminItemFormPage } from './pages/admin/AdminItemFormPage';
@@ -32,6 +33,7 @@ function App() {
             <Route path="/profiles" element={<RequireClient requireProfile={false}><ProfileSelectPage /></RequireClient>} />
             <Route path="/title/:contentId" element={<RequireClient><TitlePage /></RequireClient>} />
             <Route path="/watch/:sessionId" element={<RequireClient><PlayerPage /></RequireClient>} />
+            <Route path="/account" element={<RequireClient requireProfile={false}><AccountPage /></RequireClient>} />
             <Route path="/my-list" element={<RequireClient><MyListPage /></RequireClient>} />
             <Route path="/admin" element={<RequireAdmin><AdminHome /></RequireAdmin>} />
             <Route path="/admin/catalog" element={<RequireAdmin role="catalog_admin"><AdminCatalogPage /></RequireAdmin>} />
