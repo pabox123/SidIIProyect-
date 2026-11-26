@@ -35,9 +35,9 @@ Plataforma de streaming de películas, series y documentales con **persistencia 
 | **BD Relacional** | PostgreSQL 18+ | Miguel | ✅ M-01 a M-04 completados |
 | **BD Documental** | MongoDB 6+ | Krystal | ✅ K-01, K-02 completados |
 | **Backend Base** | NestJS + TypeScript | Edwar | 🔄 **E-01 ACTUAL** |
-| **Auth Clientes** | JWT + bcrypt | Edwar | ⏳ E-02 (próximo) |
-| **Auth Admins** | JWT + MongoDB | Edwar | ⏳ E-03 |
-| **API Cuenta/Subs** | REST + OpenAPI | Edwar | ⏳ E-04 |
+| **Auth Clientes** | JWT + bcrypt | Edwar | ✅ E-02 (registro, login, verificación de cuenta y perfiles) |
+| **Auth Admins** | JWT + MongoDB | Edwar | ✅ E-03 (admin_users, roles verificados en cada operación) |
+| **API Cuenta/Subs** | REST | Edwar | ✅ E-04 (planes, contratación M-02, pagos, perfiles) |
 | **Frontend Base** | React 18 + Vite | Balanta | ✅ B-01 (login, perfiles, navegación, errores) |
 | **Catálogo/Búsqueda** | React + API | Balanta | ✅ B-02 |
 | **Gestión de catálogo (admin)** | React + API | Balanta | ✅ B-03 |
@@ -129,6 +129,9 @@ mongosh "mongodb+srv://user:pass@cluster.xxx.mongodb.net/cineconecta" mongodb/04
 
 # Datos sintéticos alineados con los IDs de PostgreSQL (K-03)
 mongosh "mongodb://localhost:27017/cineconecta" mongodb/05_datos_sinteticos.js
+
+# Usuario de la aplicación con privilegios mínimos (no usar el administrador)
+APP_MONGO_PASSWORD='...' mongosh "mongodb://admin@localhost:27017/cineconecta" mongodb/06_usuario_aplicacion.js
 ```
 
 El script crea 5 colecciones con validación `$jsonSchema` e índices optimizados:
@@ -278,7 +281,8 @@ SidIIProyect-/
 │       ├── modules/
 │       │   ├── db/               # Pool pg + Mongoose
 │       │   ├── health/           # Health checks (Terminus)
-│       │   ├── auth/             # Login (provisional hasta E-02/E-03)
+│       │   ├── auth/             # Registro y login de clientes (E-02) y administradores (E-03)
+│       │   ├── account/          # E-04 suscripciones, pagos y perfiles
 │       │   ├── catalog/          # B-02 catálogo del cliente
 │       │   ├── admin-catalog/    # B-03 gestión del catálogo
 │       │   ├── playback/         # B-04 reproducción, Continuar viendo, Mi lista
@@ -306,12 +310,13 @@ SidIIProyect-/
 ## 🔐 Seguridad
 
 - ✅ **Cero credenciales en código** — todo en `.env` (no versionado)
-- ✅ **Usuario BD con privilegios mínimos** — `cineconecta_user` (no owner)
+- ✅ **Usuarios BD con privilegios mínimos** — PostgreSQL: `cineconecta_user` (no owner, `sql/01`); MongoDB: `cineconecta_app` con un rol por colección (`mongodb/06_usuario_aplicacion.js`)
+- ✅ **Contraseñas con hash bcrypt** — clientes en PostgreSQL y administradores en MongoDB
+- ✅ **Autorización en el servidor** — el `accountId` sale del JWT; cada perfil se verifica contra PostgreSQL y cada operación administrativa revisa el rol vigente en MongoDB
 - ✅ **Helmet.js** — headers de seguridad HTTP
 - ✅ **CORS configurado** — solo origen frontend permitido
 - ✅ **Validación global** — class-validator en todos los DTOs
-- ✅ **Rate limiting** — (pendiente E-02)
-- ✅ **JWT HttpOnly cookies** — (pendiente E-02)
+- ✅ **JWT en encabezado `Authorization: Bearer`** — el frontend lo guarda en `sessionStorage` (se borra al cerrar la pestaña); al no usar cookies no hay exposición a CSRF
 
 ---
 
@@ -344,15 +349,10 @@ pnpm run test           # Vitest
 
 ---
 
-## 🤝 Flujo de Trabajo del Equipo
+## 🤝 Ramas
 
-1. **Miguel/Krystal** completan scripts de BD → suben a `database/`
-2. **Edwar** implementa E-01 base → Backend arranca + health check OK
-3. **Balanta** inicia B-01 (frontend base) consumiendo `/api/health`
-4. **Edwar** implementa E-02 (Auth) → Balanta integra login/registro
-5. **Edwar** implementa E-03 (Admin Auth) → Krystal valida admin_users
-6. **Edwar** implementa E-04 (API Cuenta) → Balanta hace B-02 (Catálogo)
-7. **Balanta** implementa Reproducción + Informes (B-03, B-04)
+- `integracion`: rama con todo el trabajo unido (base E-01, BD de Miguel, MongoDB de Krystal, backend de Edwar y frontend de Balanta). Es la que se usa para la sustentación.
+- `feature/BD`, `feature/mongodb-catalog-design`, `feat/backend`, `feature/balanta-frontend`: ramas de trabajo de cada integrante.
 
 ---
 

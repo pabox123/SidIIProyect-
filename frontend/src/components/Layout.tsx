@@ -26,6 +26,7 @@ export function Layout() {
               <NavLink to="/my-list">Mi lista</NavLink>
             </>
           )}
+          {session.kind === 'client' && <NavLink to="/account">Mi cuenta</NavLink>}
           {session.kind === 'admin' && (
             <>
               {session.admin.roles.includes('catalog_admin') && <NavLink to="/admin/catalog">Catálogo</NavLink>}

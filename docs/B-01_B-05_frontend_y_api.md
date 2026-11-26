@@ -12,7 +12,14 @@ Responsable: Balanta. Rama: `feature/balanta-frontend` (parte de `feat/e01-base-
 | B-04 | `POST /api/playback/sessions`, `POST /api/playback/sessions/:id/events`, `GET /api/playback/continue-watching`, `GET/POST/DELETE /api/my-list` | Reproductor simulado (iniciar, pausar, reanudar, avanzar, retroceder, finalizar), fila "Continuar viendo", página "Mi lista" |
 | B-05 | `GET /api/admin/reports/revenue` y `/consumption` (JSON o `format=csv`) | Informes con filtro de fechas, totales y descarga CSV. Ejemplos en `docs/B-05_informes_ejemplo/` |
 
-## 2. Dependencia con E-02 y E-03 (Edwar)
+## 2. Integración con E-02, E-03 y E-04 (Edwar)
+
+Ya integrado: el frontend tiene la pestaña **Crear cuenta** (`POST /api/auth/register`) y la
+página **Mi cuenta** (`/account`) con suscripción vigente, contratación con pago simulado
+(aprobado o rechazado), historial de suscripciones y pagos, y creación, desactivación y
+activación de perfiles (`/api/plans`, `/api/account/*`).
+
+Historia del contrato de autenticación:
 
 Para poder integrar y probar el frontend se dejó un inicio de sesión mínimo en
 `backend/src/modules/auth`:
@@ -50,8 +57,9 @@ URL se puede definir `VITE_API_URL`.
 ## 4. Reglas de negocio y dónde se validan
 
 ### Catálogo (B-02)
-- Solo se listan contenidos `published` con `ageRating <= maxAgeRating` del perfil. El
-  `maxAgeRating` se lee de PostgreSQL con el perfil activo de la cuenta del token.
+- Como pide el enunciado, buscar y ver el detalle exige perfil activo **y suscripción vigente**
+  (misma verificación de `sql/03`). Solo se listan contenidos `published` con
+  `ageRating <= maxAgeRating` del perfil, leído de PostgreSQL.
 - La búsqueda por título usa `$text` (índice `ix_catalog_text_title`); los filtros y el orden
   `releaseYear:-1, _id:1` son los de las consultas 1 y 3 de `mongodb/03_consultas.js`.
 - El detalle de una serie trae temporadas y episodios en una sola lectura (consulta 4). Si el

@@ -159,3 +159,42 @@ export interface Report<T, Totals> {
   rows: T[];
   totals: Totals;
 }
+
+export interface Plan {
+  planId: number;
+  name: string;
+  price: number;
+  maxProfiles: number;
+}
+
+export interface Payment {
+  paymentId: number;
+  subscriptionId: number;
+  paidAt: string;
+  amount: number;
+  reference: string;
+}
+
+export interface SubscriptionRecord {
+  subscriptionId: number;
+  planId: number;
+  planName: string;
+  planPrice: number;
+  maxProfiles: number;
+  startsAt: string;
+  endsAt: string;
+  isActive: boolean;
+  payment: Payment;
+}
+
+export interface AccountSubscriptions {
+  activeSubscription: SubscriptionRecord | null;
+  subscriptions: SubscriptionRecord[];
+}
+
+export interface AccountProfiles {
+  profiles: (Profile & { accountId: number })[];
+  activeCount: number;
+  maxProfiles: number;
+  hasActiveSubscription: boolean;
+}

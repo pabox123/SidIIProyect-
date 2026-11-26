@@ -31,7 +31,7 @@ export function ProfileSelectPage() {
         {me.fullName} ·{' '}
         {me.activeSubscription
           ? `Plan ${me.activeSubscription.planName} vigente hasta ${date(me.activeSubscription.endsAt)}`
-          : 'Sin suscripción vigente: puede explorar el catálogo, pero no reproducir'}
+          : 'Sin suscripción vigente: contrate un plan para ver el catálogo y reproducir'}
       </p>
       {error && <ErrorBox message={error} />}
       <div className="profiles-grid">
@@ -50,6 +50,9 @@ export function ProfileSelectPage() {
         ))}
       </div>
       {me.profiles.length === 0 && <p className="empty">La cuenta no tiene perfiles.</p>}
+      <button className="btn btn-ghost" onClick={() => navigate('/account')}>
+        Administrar cuenta, perfiles y suscripción
+      </button>
     </section>
   );
 }

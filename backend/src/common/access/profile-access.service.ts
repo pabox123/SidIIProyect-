@@ -61,7 +61,7 @@ export class ProfileAccessService {
     );
     if (rows.length === 0) {
       throw new ForbiddenException(
-        'Su cuenta no tiene una suscripción vigente. Contrate un plan para poder reproducir contenido',
+        'Su cuenta no tiene una suscripción vigente. Contrate un plan para ver el catálogo y reproducir contenido',
       );
     }
     return { ...profile, subscriptionId: rows[0].subscriptionid, planId: rows[0].planid };
