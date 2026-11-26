@@ -45,11 +45,11 @@ try {
           },
           audioLanguages: {
             bsonType: "array", minItems: 1, uniqueItems: true,
-            items: { bsonType: "string", pattern: "^[a-z]{2,3}(-[A-Z]{2})?$" }
+            items: { bsonType: "string", pattern: "^[a-z]{2,3}(-[A-Z]{2}|-[0-9]{3})?$" }
           },
           subtitleLanguages: {
             bsonType: "array", uniqueItems: true,
-            items: { bsonType: "string", pattern: "^[a-z]{2,3}(-[A-Z]{2})?$" }
+            items: { bsonType: "string", pattern: "^[a-z]{2,3}(-[A-Z]{2}|-[0-9]{3})?$" }
           },
           ageRating: { enum: [0, 7, 12, 16, 18] },
           coverUrl: { bsonType: "string", pattern: "^https?://" },

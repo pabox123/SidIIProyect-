@@ -1,0 +1,302 @@
+================================================================================
+MEDICIÓN K-06: ANTES (sin índices secundarios)
+================================================================================
+
+================================================================================
+CONSULTA 1: Búsqueda textual + filtros (movie, Drama, es, 2015-2024, age<=12)
+================================================================================
+ERROR: text index required for $text query
+
+================================================================================
+CONSULTA 2: Filtros catálogo sin $text (movie, Drama, 2015-2024, age<=12)
+================================================================================
+{
+  explainVersion: '1',
+  queryPlanner: {
+    namespace: 'cineconecta.catalog_items',
+    parsedQuery: {
+      '$and': [
+        { genres: { '$eq': 'Drama' } },
+        { status: { '$eq': 'published' } },
+        { type: { '$eq': 'movie' } },
+        { ageRating: { '$lte': 12 } },
+        { releaseYear: { '$lte': 2024 } },
+        { releaseYear: { '$gte': 2015 } }
+      ]
+    },
+    indexFilterSet: false,
+    queryHash: '4BA0CE21',
+    planCacheShapeHash: '4BA0CE21',
+    planCacheKey: '998F18AF',
+    optimizationTimeMillis: 0,
+    optimizationTimeMicros: 212,
+    maxIndexedOrSolutionsReached: false,
+    maxIndexedAndSolutionsReached: false,
+    maxScansToExplodeReached: false,
+    prunedSimilarIndexes: false,
+    winningPlan: {
+      isCached: false,
+      stage: 'PROJECTION_SIMPLE',
+      transformBy: { title: 1, type: 1, coverUrl: 1, releaseYear: 1, ageRating: 1, genres: 1 },
+      inputStage: {
+        stage: 'SORT',
+        sortPattern: { releaseYear: -1, _id: 1 },
+        memLimit: 104857600,
+        limitAmount: 20,
+        type: 'simple',
+        inputStage: {
+          stage: 'COLLSCAN',
+          filter: { '$and': [ { genres: { '$eq': 'Drama' } }, { status: { '$eq': 'published' } }, { type: { '$eq': 'movie' } }, { ageRating: { '$lte': 12 } }, { releaseYear: { '$lte': 2024 } }, { releaseYear: { '$gte': 2015 } } ] },
+          nss: 'cineconecta.catalog_items',
+          direction: 'forward'
+        }
+      }
+    },
+    rejectedPlans: []
+  },
+  executionStats: {
+    executionSuccess: true,
+    nReturned: 20,
+    executionTimeMillis: 3,
+    executionTimeMicros: 3765,
+    totalKeysExamined: 0,
+    totalDocsExamined: 5001,
+    executionStages: {
+      isCached: false,
+      stage: 'PROJECTION_SIMPLE',
+      nReturned: 20,
+      executionTimeMillisEstimate: 0,
+      works: 5023,
+      advanced: 20,
+      needTime: 5002,
+      needYield: 0,
+      saveState: 0,
+      restoreState: 0,
+      isEOF: 1,
+      transformBy: { title: 1, type: 1, coverUrl: 1, releaseYear: 1, ageRating: 1, genres: 1 },
+      inputStage: {
+        stage: 'SORT',
+        nReturned: 20,
+        executionTimeMillisEstimate: 0,
+        works: 5023,
+        advanced: 20,
+        needTime: 5002,
+        needYield: 0,
+        saveState: 0,
+        restoreState: 0,
+        isEOF: 1,
+        sortPattern: { releaseYear: -1, _id: 1 },
+        memLimit: 104857600,
+        limitAmount: 20,
+        type: 'simple',
+        totalDataSizeSorted: 18683,
+        usedDisk: false,
+        spills: 0,
+        spilledRecords: 0,
+        spilledBytes: 0,
+        spilledDataStorageSize: 0,
+        peakTrackedMemBytes: 18926,
+        inputStage: {
+          stage: 'COLLSCAN',
+          filter: { '$and': [ { genres: { '$eq': 'Drama' } }, { status: { '$eq': 'published' } }, { type: { '$eq': 'movie' } }, { ageRating: { '$lte': 12 } }, { releaseYear: { '$lte': 2024 } }, { releaseYear: { '$gte': 2015 } } ] },
+          nReturned: 59,
+          executionTimeMillisEstimate: 0,
+          works: 5002,
+          advanced: 59,
+          needTime: 4942,
+          needYield: 0,
+          saveState: 0,
+          restoreState: 0,
+          isEOF: 1,
+          nss: 'cineconecta.catalog_items',
+          direction: 'forward',
+          docsExamined: 5001,
+          seeks: 0
+        }
+      }
+    }
+  },
+  queryShapeHash: '3B36534507E1B07EF6DC0B36A7F43DFBD41B7B0352527FB015A06B003257E727',
+  peakTrackedMemBytes: Long('18926'),
+  serverInfo: { host: 'Makinon', port: 27017, version: '9.0.8', gitVersion: '115a0fe2dcd8edd5bacd4557bd2e741a8e080665' },
+  serverParameters: { internalQueryFacetMaxOutputDocSizeBytes: 104857600, internalLookupStageIntermediateDocumentMaxSizeBytes: 104857600, internalQueryProhibitBlockingMergeOnMongoS: 0, internalQueryFrameworkControl: 'trySbeRestricted', internalQueryPlannerIgnoreIndexWithCollationForRegex: 1 },
+  ok: 1
+}
+
+================================================================================
+CONSULTA 3: Filtro por idioma (es, age<=12)
+================================================================================
+{
+  explainVersion: '1',
+  queryPlanner: {
+    namespace: 'cineconecta.catalog_items',
+    parsedQuery: {
+      '$and': [
+        { audioLanguages: { '$eq': 'es' } },
+        { status: { '$eq': 'published' } },
+        { ageRating: { '$lte': 12 } }
+      ]
+    },
+    indexFilterSet: false,
+    queryHash: '98FC2248',
+    planCacheShapeHash: '98FC2248',
+    planCacheKey: '44BBFDB4',
+    optimizationTimeMillis: 0,
+    optimizationTimeMicros: 202,
+    maxIndexedOrSolutionsReached: false,
+    maxIndexedAndSolutionsReached: false,
+    maxScansToExplodeReached: false,
+    prunedSimilarIndexes: false,
+    winningPlan: {
+      isCached: false,
+      stage: 'PROJECTION_SIMPLE',
+      transformBy: { title: 1, type: 1, coverUrl: 1, releaseYear: 1 },
+      inputStage: {
+        stage: 'SORT',
+        sortPattern: { releaseYear: -1, _id: 1 },
+        memLimit: 104857600,
+        limitAmount: 20,
+        type: 'simple',
+        inputStage: {
+          stage: 'COLLSCAN',
+          filter: { '$and': [ { audioLanguages: { '$eq': 'es' } }, { status: { '$eq': 'published' } }, { ageRating: { '$lte': 12 } } ] },
+          nss: 'cineconecta.catalog_items',
+          direction: 'forward'
+        }
+      }
+    },
+    rejectedPlans: []
+  },
+  executionStats: {
+    executionSuccess: true,
+    nReturned: 20,
+    executionTimeMillis: 3,
+    executionTimeMicros: 3663,
+    totalKeysExamined: 0,
+    totalDocsExamined: 5001,
+    executionStages: {
+      isCached: false,
+      stage: 'PROJECTION_SIMPLE',
+      nReturned: 20,
+      executionTimeMillisEstimate: 2,
+      works: 5023,
+      advanced: 20,
+      needTime: 5002,
+      needYield: 0,
+      saveState: 0,
+      restoreState: 0,
+      isEOF: 1,
+      transformBy: { title: 1, type: 1, coverUrl: 1, releaseYear: 1 },
+      inputStage: {
+        stage: 'SORT',
+        nReturned: 20,
+        executionTimeMillisEstimate: 2,
+        works: 5023,
+        advanced: 20,
+        needTime: 5002,
+        needYield: 0,
+        saveState: 0,
+        restoreState: 0,
+        isEOF: 1,
+        sortPattern: { releaseYear: -1, _id: 1 },
+        memLimit: 104857600,
+        limitAmount: 20,
+        type: 'simple',
+        totalDataSizeSorted: 33436,
+        usedDisk: false,
+        spills: 0,
+        spilledRecords: 0,
+        spilledBytes: 0,
+        spilledDataStorageSize: 0,
+        peakTrackedMemBytes: 49610,
+        inputStage: {
+          stage: 'COLLSCAN',
+          filter: { '$and': [ { audioLanguages: { '$eq': 'es' } }, { status: { '$eq': 'published' } }, { ageRating: { '$lte': 12 } } ] },
+          nReturned: 572,
+          executionTimeMillisEstimate: 2,
+          works: 5002,
+          advanced: 572,
+          needTime: 4429,
+          needYield: 0,
+          saveState: 0,
+          restoreState: 0,
+          isEOF: 1,
+          nss: 'cineconecta.catalog_items',
+          direction: 'forward',
+          docsExamined: 5001,
+          seeks: 0
+        }
+      }
+    }
+  },
+  queryShapeHash: 'ACD6404D3AB446A16F574C04DEA3F348A16F87049FCB60DFFEF4F3BDF4057EFA',
+  peakTrackedMemBytes: Long('49610'),
+  serverInfo: { host: 'Makinon', port: 27017, version: '9.0.8', gitVersion: '115a0fe2dcd8edd5bacd4557bd2e741a8e080665' },
+  serverParameters: { internalQueryFacetMaxOutputDocSizeBytes: 104857600, internalLookupStageIntermediateDocumentMaxSizeBytes: 104857600, internalQueryProhibitBlockingMergeOnMongoS: 0, internalQueryFrameworkControl: 'trySbeRestricted', internalQueryPlannerIgnoreIndexWithCollationForRegex: 1 },
+  ok: 1
+}
+
+================================================================================
+CONSULTA 4: findOne serie por _id (ser_000201)
+================================================================================
+ERROR: Executor error during find command: cineconecta.catalog_items :: caused by :: positional operator '.$' couldn't find a matching element in the array
+
+================================================================================
+CONSULTA 5: Continuar viendo (profileId=3087, accountId=1042)
+================================================================================
+{
+  explainVersion: '2',
+  stages: [
+    { '$cursor': { queryPlanner: { namespace: 'cineconecta.watch_activity', parsedQuery: { '$and': [ { accountId: { '$eq': 1042 } }, { profileId: { '$eq': 3087 } } ] }, indexFilterSet: false, queryHash: 'AFE6D1A5', planCacheShapeHash: 'AFE6D1A5', planCacheKey: '30DC9E55', optimizationTimeMillis: 0, optimizationTimeMicros: 632, cursorType: 'regular', maxIndexedOrSolutionsReached: false, maxIndexedAndSolutionsReached: false, maxScansToExplodeReached: false, prunedSimilarIndexes: false, winningPlan: { isCached: false, queryPlan: { stage: 'REPLACE_ROOT', planNodeId: 5, inputStage: { stage: 'MATCH', planNodeId: 4, filter: { '$or': [ { last: { '$type': [ 4 ] } }, { last: { '$not': { '$type': [ 3 ] } } }, { 'last.completed': { '$eq': false } } ] }, inputStage: { stage: 'GROUP', planNodeId: 3, inputStage: { stage: 'SORT', planNodeId: 2, sortPattern: { lastActivityAt: -1 }, memLimit: 104857600, type: 'simple', inputStage: { stage: 'COLLSCAN', planNodeId: 1, filter: { '$and': [ { accountId: { '$eq': 1042 } }, { profileId: { '$eq': 3087 } } ] }, nss: 'cineconecta.watch_activity', direction: 'forward' } } } }, slotBasedPlan: { ... } }, rejectedPlans: [] }, executionStats: { executionSuccess: true, nReturned: 0, executionTimeMillis: 22, executionTimeMicros: 22174, totalKeysExamined: 0, totalDocsExamined: 60000, executionStages: { stage: 'project', planNodeId: 5, nReturned: 0, executionTimeMillisEstimate: 12, opens: 1, closes: 1, saveState: 3, restoreState: 2, isEOF: 1, projections: { ... }, inputStage: { stage: 'filter', planNodeId: 4, nReturned: 0, executionTimeMillisEstimate: 12, opens: 1, closes: 1, saveState: 3, restoreState: 2, isEOF: 1, numTested: 0, filter: '((typeMatch(s8, 16) ?: false) || !(traverseF(s8, lambda(l9.0) { (typeMatch(move(l9.0), 8) ?: false) }, false)) || traverseF(s8, lambda(l10.0) { traverseF(getField(move(l10.0), "completed"), lambda(l11.0) { ((move(l11.0) == false) ?: false) }, false) }, false)) ', inputStage: { stage: 'group', planNodeId: 3, nReturned: 0, executionTimeMillisEstimate: 12, opens: 1, closes: 1, saveState: 3, restoreState: 2, isEOF: 1, groupBySlots: [ Long('10') ], expressions: { '8': '_internalFirst::accumulate(s8, s1) ', initExprs: { '8': null, mergingExprs: { '9': '_internalFirst::merge(s9) ' } } }, usedDisk: false, spills: 0, spilledBytes: 0, spilledRecords: 0, spilledDataStorageSize: 0, peakTrackedMemBytes: 0, inputStage: { stage: 'project', planNodeId: 3, nReturned: 0, executionTimeMillisEstimate: 12, opens: 1, closes: 2, saveState: 3, restoreState: 2, isEOF: 1, projections: { '10': '(s3 ?: null) ' }, inputStage: { stage: 'sort', planNodeId: 2, nReturned: 0, executionTimeMillisEstimate: 12, opens: 1, closes: 2, saveState: 3, restoreState: 2, isEOF: 1, memLimit: 104857600, totalDataSizeSorted: 0, usedDisk: false, spills: 0, spilledDataStorageSize: 0, spilledBytes: 0, spilledRecords: 0, peakTrackedMemBytes: 0, orderBySlots: { '7': 'desc' }, outputSlots: [ Long('1'), Long('3') ], inputStage: { stage: 'project', planNodeId: 2, nReturned: 0, executionTimeMillisEstimate: 12, opens: 1, closes: 1, saveState: 3, restoreState: 2, isEOF: 1, projections: { '7': 'getSortKeyDesc(s4) ' }, inputStage: { stage: 'filter', planNodeId: 1, nReturned: 0, executionTimeMillisEstimate: 12, opens: 1, closes: 1, saveState: 3, restoreState: 2, isEOF: 1, numTested: 60000, filter: '(traverseF(s5, lambda(l3.0) { ((move(l3.0) == 1042) ?: false) }, false) && traverseF(s6, lambda(l4.0) { ((move(l4.0) == 3087) ?: false) }, false)) ', inputStage: { stage: 'scan', planNodeId: 1, nReturned: 60000, executionTimeMillisEstimate: 0, opens: 1, closes: 1, saveState: 3, restoreState: 2, isEOF: 1, numReads: 60000, recordSlot: 1, recordIdSlot: 2, scanFieldNames: [ 'contentId', 'lastActivityAt', 'accountId', 'profileId' ], scanFieldSlots: [ Long('3'), Long('4'), Long('5'), Long('6') ] } } } } } } } } } }, nReturned: Long('0'), executionTimeMillisEstimate: Long('13') } },
+    { '$sort': { sortKey: { lastActivityAt: -1 } }, totalDataSizeSortedBytesEstimate: Long('0'), usedDisk: false, spills: Long('0'), spilledBytes: Long('0'), spilledRecords: Long('0'), spilledDataStorageSize: Long('0'), nReturned: Long('0'), executionTimeMillisEstimate: Long('13'), peakTrackedMemBytes: Long('0') },
+    { '$lookup': { from: 'catalog_items', as: 'item', localField: 'contentId', foreignField: '_id', let: {}, pipeline: [ { '$project': { _id: true, title: true, type: true, coverUrl: true, status: true } }, { '$match': { status: { '$eq': 'published' } } } ], unwinding: { preserveNullAndEmptyArrays: false } }, nReturned: Long('0'), executionTimeMillisEstimate: Long('13'), totalDocsExamined: Long('0'), totalKeysExamined: Long('0'), collectionScans: Long('0'), indexesUsed: [], expressionEvaluationPeakMemoryBytes: Long('0') },
+    { '$limit': Long('20'), nReturned: Long('0'), executionTimeMillisEstimate: Long('13') },
+    { '$project': { contentId: true, episodeId: true, lastPositionSeconds: true, lastActivityAt: true, title: '$item.title', type: '$item.type', coverUrl: '$item.coverUrl', _id: false }, nReturned: Long('0'), executionTimeMillisEstimate: Long('13'), expressionEvaluationPeakMemoryBytes: Long('0') }
+  ],
+  queryShapeHash: 'C802249EB2C9FACE0C625EBBC38B392228073F62652E6FA98E679BCE4BEEF9AD',
+  serverInfo: { host: 'Makinon', port: 27017, version: '9.0.8', gitVersion: '115a0fe2dcd8edd5bacd4557bd2e741a8e080665' },
+  serverParameters: { internalQueryFacetMaxOutputDocSizeBytes: 104857600, internalLookupStageIntermediateDocumentMaxSizeBytes: 104857600, internalQueryProhibitBlockingMergeOnMongoS: 0, internalQueryFrameworkControl: 'trySbeRestricted', internalQueryPlannerIgnoreIndexWithCollationForRegex: 1 },
+  command: { aggregate: 'watch_activity', pipeline: [ { '$match': { accountId: 1042, profileId: 3087 } }, { '$sort': { lastActivityAt: -1 } }, { '$group': { _id: '$contentId', last: { '$first': '$$ROOT' } } }, { '$replaceRoot': { newRoot: '$last' } }, { '$match': { completed: false } }, { '$sort': { lastActivityAt: -1 } }, { '$lookup': { from: 'catalog_items', localField: 'contentId', foreignField: '_id', pipeline: [ { '$project': { title: 1, type: 1, coverUrl: 1, status: 1 } } ], as: 'item' } }, { '$unwind': '$item' }, { '$match': { 'item.status': 'published' } }, { '$limit': 20 }, { '$project': { _id: 0, contentId: 1, episodeId: 1, lastPositionSeconds: 1, lastActivityAt: 1, title: '$item.title', type: '$item.type', coverUrl: '$item.coverUrl' } } ], cursor: {}, '$db': 'cineconecta' },
+  ok: 1
+}
+
+================================================================================
+CONSULTA 6: Mi lista (profileId=3087, accountId=1042)
+================================================================================
+{
+  explainVersion: '1',
+  stages: [
+    { '$cursor': { queryPlanner: { namespace: 'cineconecta.user_lists', parsedQuery: { '$and': [ { accountId: { '$eq': 1042 } }, { profileId: { '$eq': 3087 } } ] }, indexFilterSet: false, queryHash: 'F9336A1E', planCacheShapeHash: 'F9336A1E', planCacheKey: '3B2F4142', optimizationTimeMillis: 0, optimizationTimeMicros: 492, cursorType: 'regular', maxIndexedOrSolutionsReached: false, maxIndexedAndSolutionsReached: false, maxScansToExplodeReached: false, prunedSimilarIndexes: false, winningPlan: { isCached: false, stage: 'SORT', sortPattern: { addedAt: -1 }, memLimit: 104857600, limitAmount: 20, type: 'simple', inputStage: { stage: 'COLLSCAN', filter: { '$and': [ { accountId: { '$eq': 1042 } }, { profileId: { '$eq': 3087 } } ] }, nss: 'cineconecta.user_lists', direction: 'forward' } }, rejectedPlans: [] }, executionStats: { executionSuccess: true, nReturned: 0, executionTimeMillis: 683, executionTimeMicros: 683895, totalKeysExamined: 0, totalDocsExamined: 251392, executionStages: { isCached: false, stage: 'SORT', nReturned: 0, executionTimeMillisEstimate: 608, works: 251394, advanced: 0, needTime: 251393, needYield: 0, saveState: 44, restoreState: 43, isEOF: 1, sortPattern: { addedAt: -1 }, memLimit: 104857600, limitAmount: 20, type: 'simple', totalDataSizeSorted: 0, usedDisk: false, spills: 0, spilledRecords: 0, spilledBytes: 0, spilledDataStorageSize: 0, peakTrackedMemBytes: 0, inputStage: { stage: 'COLLSCAN', filter: { '$and': [ { accountId: { '$eq': 1042 } }, { profileId: { '$eq': 3087 } } ] }, nReturned: 0, executionTimeMillisEstimate: 464, works: 251393, advanced: 0, needTime: 251392, needYield: 0, saveState: 44, restoreState: 43, isEOF: 1, nss: 'cineconecta.user_lists', direction: 'forward', docsExamined: 251392, seeks: 0 } } } }, nReturned: Long('0'), executionTimeMillisEstimate: Long('683') },
+    { '$lookup': { from: 'catalog_items', as: 'item', localField: 'contentId', foreignField: '_id', let: {}, pipeline: [ { '$project': { _id: true, title: true, type: true, coverUrl: true, status: true } } ], unwinding: { preserveNullAndEmptyArrays: false } }, nReturned: Long('0'), executionTimeMillisEstimate: Long('683'), totalDocsExamined: Long('0'), totalKeysExamined: Long('0'), collectionScans: Long('0'), indexesUsed: [], expressionEvaluationPeakMemoryBytes: Long('0') },
+    { '$addFields': { isWithdrawn: { '$eq': [ '$item.status', { '$const': 'withdrawn' } ] } }, nReturned: Long('0'), executionTimeMillisEstimate: Long('683'), expressionEvaluationPeakMemoryBytes: Long('0') }
+  ],
+  queryShapeHash: 'D7935D98449EF39DB4152CD9B3A1507F9E2C09C7F639E75F7F7F02884A31ECE3',
+  serverInfo: { host: 'Makinon', port: 27017, version: '9.0.8', gitVersion: '115a0fe2dcd8edd5bacd4557bd2e741a8e080665' },
+  serverParameters: { internalQueryFacetMaxOutputDocSizeBytes: 104857600, internalLookupStageIntermediateDocumentMaxSizeBytes: 104857600, internalQueryProhibitBlockingMergeOnMongoS: 0, internalQueryFrameworkControl: 'trySbeRestricted', internalQueryPlannerIgnoreIndexWithCollationForRegex: 1 },
+  command: { aggregate: 'user_lists', pipeline: [ { '$match': { accountId: 1042, profileId: 3087 } }, { '$sort': { addedAt: -1 } }, { '$skip': 0 }, { '$limit': 20 }, { '$lookup': { from: 'catalog_items', localField: 'contentId', foreignField: '_id', pipeline: [ { '$project': { title: 1, type: 1, coverUrl: 1, status: 1 } } ], as: 'item' } }, { '$unwind': '$item' }, { '$addFields': { isWithdrawn: { '$eq': [ '$item.status', 'withdrawn' ] } } } ], cursor: {}, '$db': 'cineconecta' },
+  ok: 1
+}
+
+================================================================================
+CONSULTA 7: Informe consumo Oct 2026 (startedAt range + group by planId+contentType)
+================================================================================
+{
+  explainVersion: '2',
+  stages: [
+    { '$cursor': { queryPlanner: { namespace: 'cineconecta.watch_activity', parsedQuery: { '$and': [ { startedAt: { '$lt': ISODate('2026-11-01T00:00:00.000Z') } }, { startedAt: { '$gte': ISODate('2026-10-01T00:00:00.000Z') } } ] }, indexFilterSet: false, queryHash: '1C7D859A', planCacheShapeHash: '1C7D859A', planCacheKey: '985253C8', optimizationTimeMillis: 2, optimizationTimeMicros: 2105, cursorType: 'regular', maxIndexedOrSolutionsReached: false, maxIndexedAndSolutionsReached: false, maxScansToExplodeReached: false, prunedSimilarIndexes: false, winningPlan: { isCached: false, queryPlan: { stage: 'GROUP', planNodeId: 3, inputStage: { stage: 'COLLSCAN', planNodeId: 1, filter: { '$and': [ { startedAt: { '$lt': ISODate('2026-11-01T00:00:00.000Z') } }, { startedAt: { '$gte': ISODate('2026-10-01T00:00:00.000Z') } } ] }, nss: 'cineconecta.watch_activity', direction: 'forward' } }, slotBasedPlan: { ... } }, rejectedPlans: [] }, executionStats: { executionSuccess: true, nReturned: 9, executionTimeMillis: 160, executionTimeMicros: 160560, totalKeysExamined: 0, totalDocsExamined: 60000, executionStages: { stage: 'project', planNodeId: 3, nReturned: 9, executionTimeMillisEstimate: 149, opens: 1, closes: 1, saveState: 11, restoreState: 10, isEOF: 1, projections: { '20': 'newObj("_id", s17, "totalSeconds", s18, "sessions", s11, "completed", s19, "profiles", s15) ' }, inputStage: { stage: 'project', planNodeId: 3, nReturned: 9, executionTimeMillisEstimate: 149, opens: 1, closes: 1, saveState: 11, restoreState: 10, isEOF: 1, projections: { '17': 'newObj("planId", s5, "contentType", s4) ', '18': 'doubleDoubleSumFinalize(s10) ', '19': 'doubleDoubleSumFinalize(s14) ' }, inputStage: { stage: 'group', planNodeId: 3, nReturned: 9, executionTimeMillisEstimate: 149, opens: 1, closes: 1, saveState: 11, restoreState: 10, isEOF: 1, groupBySlots: [ Long('5'), Long('4') ], expressions: { '10': 'aggDoubleDoubleSum(s7) ', '11': '_internalCount::accumulate(s11, 1) ', '14': 'aggDoubleDoubleSum( if (coerceToBool(s3) ?: false) then 1 else 0 ) ', '15': '_internalAddToSet::accumulate(s15, s6) ', initExprs: { '10': null, '11': null, '14': null, '15': null, mergingExprs: { '9': 'aggMergeDoubleDoubleSums(s9) ', '12': '_internalCount::merge(s12) ', '13': 'aggMergeDoubleDoubleSums(s13) ', '16': '_internalAddToSet::merge(s16) ' } } }, usedDisk: false, spills: 0, spilledBytes: 0, spilledRecords: 0, spilledDataStorageSize: 0, peakTrackedMemBytes: 22248, inputStage: { stage: 'filter', planNodeId: 1, nReturned: 2501, executionTimeMillisEstimate: 138, opens: 1, closes: 2, saveState: 11, restoreState: 10, isEOF: 1, numTested: 60000, filter: '(traverseF(s8, lambda(l3.0) { ((move(l3.0) < Date(1793491200000)) ?: false) }, false) && traverseF(s8, lambda(l4.0) { ((move(l4.0) >= Date(1790812800000)) ?: false) }, false)) ', inputStage: { stage: 'scan', planNodeId: 1, nReturned: 60000, executionTimeMillisEstimate: 120, opens: 1, closes: 1, saveState: 11, restoreState: 10, isEOF: 1, numReads: 60000, recordSlot: 1, recordIdSlot: 2, scanFieldNames: [ 'completed', 'contentType', 'planId', 'profileId', 'watchedSeconds', 'startedAt' ], scanFieldSlots: [ Long('3'), Long('4'), Long('5'), Long('6'), Long('7'), Long('8') ] } } } } } } } }, nReturned: Long('9'), executionTimeMillisEstimate: Long('150') } },
+    { '$project': { sessions: true, completed: true, planId: '$_id.planId', contentType: '$_id.contentType', minutesWatched: { '$round': [ { '$divide': [ '$totalSeconds', { '$const': 60 } ] }, { '$const': 2 } ] }, distinctProfiles: { '$size': [ '$profiles' ] }, _id: false }, nReturned: Long('9'), executionTimeMillisEstimate: Long('150'), expressionEvaluationPeakMemoryBytes: Long('0') },
+    { '$sort': { sortKey: { planId: 1, contentType: 1 } }, totalDataSizeSortedBytesEstimate: Long('6309'), usedDisk: false, spills: Long('0'), spilledBytes: Long('0'), spilledRecords: Long('0'), spilledDataStorageSize: Long('0'), nReturned: Long('9'), executionTimeMillisEstimate: Long('150'), peakTrackedMemBytes: Long('6309') }
+  ],
+  queryShapeHash: '9650B29FE56E26D9C5A94ADFF999FC650CD8B225D972F6BD1F2DD7FF37040D7E',
+  peakTrackedMemBytes: Long('22248'),
+  serverInfo: { host: 'Makinon', port: 27017, version: '9.0.8', gitVersion: '115a0fe2dcd8edd5bacd4557bd2e741a8e080665' },
+  serverParameters: { internalQueryFacetMaxOutputDocSizeBytes: 104857600, internalLookupStageIntermediateDocumentMaxSizeBytes: 104857600, internalQueryProhibitBlockingMergeOnMongoS: 0, internalQueryFrameworkControl: 'trySbeRestricted', internalQueryPlannerIgnoreIndexWithCollationForRegex: 1 },
+  command: { aggregate: 'watch_activity', pipeline: [ { '$match': { startedAt: { '$gte': ISODate('2026-10-01T00:00:00.000Z'), '$lt': ISODate('2026-11-01T00:00:00.000Z') } } }, { '$group': { _id: { planId: '$planId', contentType: '$contentType' }, totalSeconds: { '$sum': '$watchedSeconds' }, sessions: { '$sum': 1 }, completed: { '$sum': { '$cond': [ '$completed', 1, 0 ] } }, profiles: { '$addToSet': '$profileId' } } }, { '$project': { _id: 0, planId: '$_id.planId', contentType: '$_id.contentType', minutesWatched: { '$round': [ { '$divide': [ '$totalSeconds', 60 ] }, 2 ] }, sessions: 1, completed: 1, distinctProfiles: { '$size': '$profiles' } } }, { '$sort': { planId: 1, contentType: 1 } } ], cursor: {}, '$db': 'cineconecta' },
+  ok: 1
+}
+
+================================================================================
+CONSULTA 8: Login admin (email CI + isActive)
+================================================================================
+ERROR: ("﻿db.admin_users ...  } }
+)﻿" , _ex3 , (intermediate value)(intermediate value)(intermediate value)).explain is not a function
