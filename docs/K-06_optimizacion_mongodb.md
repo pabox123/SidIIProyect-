@@ -41,7 +41,7 @@ Todas las consultas provienen de `mongodb/03_consultas.js` y son las que usa la 
 
 ## 3. Índices definidos y justificación
 
-La base tiene **12 índices** (incluyendo `_id` implícito en cada colección).
+La base tiene **14 índices** en las 4 colecciones principales (10 índices secundarios + 4 índices `_id` implícitos, más `_id` de la colección auxiliar `counters`).
 
 | Índice | Colección | Campos | Tipo | Consulta(s) que sirve | Justificación |
 |---|---|---|---|---|---|
