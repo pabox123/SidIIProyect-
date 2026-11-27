@@ -1,19 +1,32 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { errorMessage } from '../api/client';
 import { ageLabel, date } from '../utils/format';
-import { ErrorBox } from '../components/ui';
+import { ErrorBox, Spinner } from '../components/ui';
 import type { Profile } from '../api/types';
 
 export function ProfileSelectPage() {
   const { session, selectProfile, refreshMe } = useAuth();
   const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    refreshMe().catch((err) => setError(errorMessage(err)));
+  const loadProfiles = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      await refreshMe();
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
   }, [refreshMe]);
+
+  useEffect(() => {
+    loadProfiles();
+  }, [loadProfiles]);
 
   if (session.kind !== 'client') return null;
   const { me } = session;
@@ -33,23 +46,29 @@ export function ProfileSelectPage() {
           ? `Plan ${me.activeSubscription.planName} vigente hasta ${date(me.activeSubscription.endsAt)}`
           : 'Sin suscripción vigente: contrate un plan para ver el catálogo y reproducir'}
       </p>
-      {error && <ErrorBox message={error} />}
-      <div className="profiles-grid">
-        {me.profiles.map((p) => (
-          <button
-            key={p.profileId}
-            className={`profile-tile ${p.isActive ? '' : 'disabled'}`}
-            onClick={() => choose(p)}
-            disabled={!p.isActive}
-            title={p.isActive ? `Entrar como ${p.name}` : 'Perfil desactivado'}
-          >
-            <span className="avatar avatar-lg">{p.name.charAt(0)}</span>
-            <strong>{p.name}</strong>
-            <small>{p.isActive ? `Clasificación hasta ${ageLabel(p.maxAgeRating)}` : 'Desactivado'}</small>
-          </button>
-        ))}
-      </div>
-      {me.profiles.length === 0 && <p className="empty">La cuenta no tiene perfiles.</p>}
+      {loading ? (
+        <Spinner label="Cargando perfiles..." />
+      ) : (
+        <>
+          {error && <ErrorBox message={error} onRetry={loadProfiles} />}
+          <div className="profiles-grid">
+            {me.profiles.map((p) => (
+              <button
+                key={p.profileId}
+                className={`profile-tile ${p.isActive ? '' : 'disabled'}`}
+                onClick={() => choose(p)}
+                disabled={!p.isActive}
+                title={p.isActive ? `Entrar como ${p.name}` : 'Perfil desactivado'}
+              >
+                <span className="avatar avatar-lg">{p.name.charAt(0)}</span>
+                <strong>{p.name}</strong>
+                <small>{p.isActive ? `Clasificación hasta ${ageLabel(p.maxAgeRating)}` : 'Desactivado'}</small>
+              </button>
+            ))}
+          </div>
+          {me.profiles.length === 0 && <p className="empty">La cuenta no tiene perfiles.</p>}
+        </>
+      )}
       <button className="btn btn-ghost" onClick={() => navigate('/account')}>
         Administrar cuenta, perfiles y suscripción
       </button>

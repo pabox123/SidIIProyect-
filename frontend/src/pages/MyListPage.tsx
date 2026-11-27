@@ -5,7 +5,7 @@ import { myListApi } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import type { MyListItem } from '../api/types';
 import { ContentCard } from '../components/ContentCard';
-import { Badge, Cover, Empty, ErrorBox, Spinner } from '../components/ui';
+import { Badge, Cover, Empty, ErrorBox, InlineSpinner, Spinner } from '../components/ui';
 import { date } from '../utils/format';
 
 export function MyListPage() {
@@ -14,6 +14,7 @@ export function MyListPage() {
   const toast = useToast();
   const [items, setItems] = useState<MyListItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -26,17 +27,21 @@ export function MyListPage() {
   useEffect(load, [load]);
 
   const remove = async (contentId: string) => {
+    if (busyId !== null) return;
+    setBusyId(contentId);
     try {
       await myListApi.remove(profileId, contentId);
       setItems((list) => list?.filter((i) => i.contentId !== contentId) ?? null);
       toast('info', 'Quitado de Mi lista');
     } catch (err) {
       toast('error', errorMessage(err));
+    } finally {
+      setBusyId(null);
     }
   };
 
   if (error) return <ErrorBox message={error} onRetry={load} />;
-  if (!items) return <Spinner />;
+  if (!items) return <Spinner label="Cargando Mi lista..." />;
 
   return (
     <section>
@@ -52,8 +57,19 @@ export function MyListPage() {
                 <div className="card-meta">
                   <Badge tone="warning">No disponible</Badge>
                 </div>
-                <button className="btn btn-ghost btn-sm" onClick={() => remove(item.contentId)}>
-                  Quitar
+                <button
+                  className="btn btn-ghost btn-sm"
+                  disabled={busyId !== null}
+                  onClick={() => remove(item.contentId)}
+                >
+                  {busyId === item.contentId ? (
+                    <>
+                      <InlineSpinner />
+                      Quitando...
+                    </>
+                  ) : (
+                    'Quitar'
+                  )}
                 </button>
               </div>
             </div>

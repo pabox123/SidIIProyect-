@@ -1,11 +1,11 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { catalogApi, playbackApi } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import type { CatalogFilters, ContentCard as Card, ContinueWatchingItem, Page } from '../api/types';
 import { ContentCard } from '../components/ContentCard';
-import { Cover, Empty, ErrorBox, Pagination, Spinner } from '../components/ui';
+import { Cover, Empty, ErrorBox, InlineSpinner, Pagination, Spinner } from '../components/ui';
 import { clock, languageName, TYPE_LABEL } from '../utils/format';
 
 export function HomePage() {
@@ -18,6 +18,7 @@ export function HomePage() {
   const [loading, setLoading] = useState(false);
   const [continueItems, setContinueItems] = useState<ContinueWatchingItem[]>([]);
   const [q, setQ] = useState(params.get('q') ?? '');
+  const requestIdRef = useRef(0);
 
   const query = {
     q: params.get('q') ?? '',
@@ -40,14 +41,16 @@ export function HomePage() {
   };
 
   const load = useCallback(async () => {
+    const reqId = ++requestIdRef.current;
     setLoading(true);
     setError(null);
     try {
-      setResult(await catalogApi.search({ profileId, ...query, pageSize: 12 }));
+      const data = await catalogApi.search({ profileId, ...query, pageSize: 12 });
+      if (reqId === requestIdRef.current) setResult(data);
     } catch (err) {
-      setError(errorMessage(err));
+      if (reqId === requestIdRef.current) setError(errorMessage(err));
     } finally {
-      setLoading(false);
+      if (reqId === requestIdRef.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId, key]);
@@ -66,6 +69,7 @@ export function HomePage() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (loading) return;
     update({ q: q.trim() });
   };
 
@@ -118,7 +122,16 @@ export function HomePage() {
             onChange={(e) => setQ(e.target.value)}
             aria-label="Buscar por título"
           />
-          <button className="btn btn-primary">Buscar</button>
+          <button className="btn btn-primary" disabled={loading}>
+            {loading ? (
+              <>
+                <InlineSpinner />
+                Buscando...
+              </>
+            ) : (
+              'Buscar'
+            )}
+          </button>
         </form>
         <div className="filters">
           <select value={query.type} onChange={(e) => update({ type: e.target.value })} aria-label="Tipo">

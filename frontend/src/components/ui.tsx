@@ -4,10 +4,20 @@ import { TYPE_LABEL } from '../utils/format';
 
 export function Spinner({ label = 'Cargando...' }: { label?: string }) {
   return (
-    <div className="spinner-box" role="status">
-      <div className="spinner" />
+    <div className="spinner-box" role="status" aria-live="polite">
+      <div className="spinner" aria-hidden="true" />
       <span>{label}</span>
     </div>
+  );
+}
+
+export function InlineSpinner({ label }: { label?: string }) {
+  if (!label) return <span className="inline-spinner" aria-hidden="true" />;
+  return (
+    <span className="inline-spinner-wrap" role="status" aria-live="polite">
+      <span className="inline-spinner" aria-hidden="true" />
+      <span>{label}</span>
+    </span>
   );
 }
 
@@ -16,7 +26,7 @@ export function ErrorBox({ message, onRetry }: { message: string; onRetry?: () =
     <div className="error-box" role="alert">
       <span>⚠️ {message}</span>
       {onRetry && (
-        <button className="btn btn-ghost btn-sm" onClick={onRetry}>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onRetry}>
           Reintentar
         </button>
       )}

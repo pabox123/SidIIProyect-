@@ -5,7 +5,7 @@ import { useToast } from '../context/ToastContext';
 import { catalogApi, myListApi, playbackApi } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import type { CatalogItem } from '../api/types';
-import { Badge, Cover, ErrorBox, Spinner } from '../components/ui';
+import { Badge, Cover, ErrorBox, InlineSpinner, Spinner } from '../components/ui';
 import { ageLabel, languageName, minutes, TYPE_LABEL } from '../utils/format';
 
 export function TitlePage() {
@@ -19,7 +19,8 @@ export function TitlePage() {
   const [error, setError] = useState<string | null>(null);
   const [playError, setPlayError] = useState<string | null>(null);
   const [season, setSeason] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [playingTarget, setPlayingTarget] = useState<string | null>(null);
+  const [busyList, setBusyList] = useState(false);
   const focusEpisode = params.get('episode');
 
   const load = useCallback(async () => {
@@ -39,9 +40,10 @@ export function TitlePage() {
     load();
   }, [load]);
 
-  const play = async (episodeId?: string) => {
+  const play = async (episodeId?: string, targetKey = '__main__') => {
+    if (playingTarget !== null) return;
     setPlayError(null);
-    setBusy(true);
+    setPlayingTarget(targetKey);
     try {
       const session = await playbackApi.start(profileId, contentId, episodeId);
       navigate(`/watch/${session.sessionId}`, { state: { session } });
@@ -49,12 +51,13 @@ export function TitlePage() {
       // Rechazos del servidor: suscripción vencida, clasificación no permitida, retirado...
       setPlayError(errorMessage(err));
     } finally {
-      setBusy(false);
+      setPlayingTarget(null);
     }
   };
 
   const toggleList = async () => {
-    if (!item) return;
+    if (!item || busyList) return;
+    setBusyList(true);
     try {
       if (item.inMyList) {
         await myListApi.remove(profileId, contentId);
@@ -63,9 +66,11 @@ export function TitlePage() {
         await myListApi.add(profileId, contentId);
         toast('success', 'Agregado a Mi lista');
       }
-      setItem({ ...item, inMyList: !item.inMyList });
+      setItem((prev) => (prev ? { ...prev, inMyList: !prev.inMyList } : prev));
     } catch (err) {
       toast('error', errorMessage(err));
+    } finally {
+      setBusyList(false);
     }
   };
 
@@ -134,13 +139,29 @@ export function TitlePage() {
           <div className="actions">
             <button
               className="btn btn-primary"
-              disabled={busy}
-              onClick={() => play(item.type === 'series' ? firstEpisode : undefined)}
+              disabled={playingTarget !== null}
+              onClick={() => play(item.type === 'series' ? firstEpisode : undefined, '__main__')}
             >
-              ▶ {item.type === 'series' ? 'Reproducir episodio' : 'Reproducir'}
+              {playingTarget === '__main__' ? (
+                <>
+                  <InlineSpinner />
+                  Iniciando...
+                </>
+              ) : (
+                `▶ ${item.type === 'series' ? 'Reproducir episodio' : 'Reproducir'}`
+              )}
             </button>
-            <button className="btn btn-ghost" onClick={toggleList}>
-              {item.inMyList ? '✓ En Mi lista' : '+ Mi lista'}
+            <button className="btn btn-ghost" disabled={busyList} onClick={toggleList}>
+              {busyList ? (
+                <>
+                  <InlineSpinner />
+                  {item.inMyList ? 'Quitando...' : 'Agregando...'}
+                </>
+              ) : item.inMyList ? (
+                '✓ En Mi lista'
+              ) : (
+                '+ Mi lista'
+              )}
             </button>
           </div>
           {playError && <ErrorBox message={playError} />}
@@ -173,8 +194,19 @@ export function TitlePage() {
                       <p className="muted small">{e.synopsis}</p>
                     </div>
                     <span className="muted small">{minutes(e.durationMinutes)}</span>
-                    <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => play(e.episodeId)}>
-                      ▶ Ver
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      disabled={playingTarget !== null}
+                      onClick={() => play(e.episodeId, e.episodeId ?? `ep-${e.number}`)}
+                    >
+                      {playingTarget === (e.episodeId ?? `ep-${e.number}`) ? (
+                        <>
+                          <InlineSpinner />
+                          Iniciando...
+                        </>
+                      ) : (
+                        '▶ Ver'
+                      )}
                     </button>
                   </li>
                 ))}

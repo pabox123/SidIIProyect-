@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { adminCatalogApi } from '../../api/endpoints';
 import { errorMessage } from '../../api/client';
 import type { CatalogItem, ContentStatus, ContentType, Page } from '../../api/types';
 import { useToast } from '../../context/ToastContext';
-import { Badge, Empty, ErrorBox, Pagination, Spinner } from '../../components/ui';
+import { Badge, Empty, ErrorBox, InlineSpinner, Pagination, Spinner } from '../../components/ui';
 import { ageLabel, date, STATUS_LABEL, TYPE_LABEL } from '../../utils/format';
 
 const STATUS_TONE: Record<ContentStatus, string> = { draft: 'neutral', published: 'success', withdrawn: 'warning' };
@@ -17,14 +17,21 @@ export function AdminCatalogPage() {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Page<CatalogItem> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const load = useCallback(async () => {
+    const reqId = ++requestIdRef.current;
+    setLoading(true);
     setError(null);
     try {
-      setData(await adminCatalogApi.list({ q, type, status, page }));
+      const result = await adminCatalogApi.list({ q, type, status, page });
+      if (reqId === requestIdRef.current) setData(result);
     } catch (err) {
-      setError(errorMessage(err));
+      if (reqId === requestIdRef.current) setError(errorMessage(err));
+    } finally {
+      if (reqId === requestIdRef.current) setLoading(false);
     }
   }, [q, type, status, page]);
 
@@ -34,6 +41,7 @@ export function AdminCatalogPage() {
   }, [load]);
 
   const transition = async (item: CatalogItem, action: 'publish' | 'withdraw') => {
+    if (busyId !== null) return;
     setBusyId(item.contentId);
     try {
       await (action === 'publish' ? adminCatalogApi.publish(item.contentId) : adminCatalogApi.withdraw(item.contentId));
@@ -76,15 +84,16 @@ export function AdminCatalogPage() {
           <option value="published">Publicado</option>
           <option value="withdrawn">Retirado</option>
         </select>
+        {loading && data && <InlineSpinner label="Actualizando catálogo..." />}
       </div>
       {error && <ErrorBox message={error} onRetry={load} />}
-      {!data && !error && <Spinner />}
+      {!data && !error && <Spinner label="Cargando catálogo..." />}
       {data && (
         <>
           {data.items.length === 0 ? (
             <Empty>No hay contenidos con esos filtros.</Empty>
           ) : (
-            <div className="table-wrap">
+            <div className={`table-wrap ${loading ? 'is-loading' : ''}`}>
               <table className="table">
                 <thead>
                   <tr>
@@ -115,18 +124,32 @@ export function AdminCatalogPage() {
                         {item.status !== 'published' ? (
                           <button
                             className="btn btn-ghost btn-sm"
-                            disabled={busyId === item.contentId}
+                            disabled={busyId !== null}
                             onClick={() => transition(item, 'publish')}
                           >
-                            Publicar
+                            {busyId === item.contentId ? (
+                              <>
+                                <InlineSpinner />
+                                Publicando...
+                              </>
+                            ) : (
+                              'Publicar'
+                            )}
                           </button>
                         ) : (
                           <button
                             className="btn btn-danger btn-sm"
-                            disabled={busyId === item.contentId}
+                            disabled={busyId !== null}
                             onClick={() => transition(item, 'withdraw')}
                           >
-                            Retirar
+                            {busyId === item.contentId ? (
+                              <>
+                                <InlineSpinner />
+                                Retirando...
+                              </>
+                            ) : (
+                              'Retirar'
+                            )}
                           </button>
                         )}
                       </td>

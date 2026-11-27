@@ -4,7 +4,7 @@ import { playbackApi } from '../api/endpoints';
 import { api, errorMessage, tokenStore } from '../api/client';
 import type { PlaybackStart, PlaybackState } from '../api/types';
 import { useToast } from '../context/ToastContext';
-import { Cover, ErrorBox } from '../components/ui';
+import { Cover, ErrorBox, InlineSpinner } from '../components/ui';
 import { clock } from '../utils/format';
 
 const HEARTBEAT_EVERY = 10; // segundos
@@ -24,18 +24,27 @@ export function PlayerPage() {
   const [position, setPosition] = useState(start?.lastPositionSeconds ?? 0);
   const [playing, setPlaying] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pendingEvents, setPendingEvents] = useState(0);
+  const [finishing, setFinishing] = useState(false);
   const positionRef = useRef(position);
   const closedRef = useRef(false);
+  const finishingRef = useRef(false);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const ticks = useRef(0);
 
   positionRef.current = position;
+  const syncing = pendingEvents > 0;
 
   /** Los eventos se envían en orden, uno tras otro. */
   const send = useCallback(
     (type: string, positionSeconds: number, fromSeconds?: number) => {
+      if (closedRef.current) return queue.current;
+      setPendingEvents((n) => n + 1);
       queue.current = queue.current.then(async () => {
-        if (closedRef.current) return;
+        if (closedRef.current) {
+          setPendingEvents((n) => Math.max(0, n - 1));
+          return;
+        }
         try {
           const state = await playbackApi.event(sessionId, type, positionSeconds, fromSeconds);
           setServer(state);
@@ -43,6 +52,8 @@ export function PlayerPage() {
           setError(null);
         } catch (err) {
           setError(errorMessage(err));
+        } finally {
+          setPendingEvents((n) => Math.max(0, n - 1));
         }
       });
       return queue.current;
@@ -63,9 +74,14 @@ export function PlayerPage() {
 
   // Al llegar al final se finaliza automáticamente
   useEffect(() => {
-    if (start && position >= start.durationSeconds && !closedRef.current) {
+    if (start && position >= start.durationSeconds && !closedRef.current && !finishingRef.current) {
+      finishingRef.current = true;
+      setFinishing(true);
       setPlaying(false);
-      send('finish', start.durationSeconds);
+      send('finish', start.durationSeconds).finally(() => {
+        finishingRef.current = false;
+        setFinishing(false);
+      });
     }
   }, [position, start, send]);
 
@@ -109,7 +125,7 @@ export function PlayerPage() {
   const closed = server?.status === 'closed';
 
   const togglePlay = () => {
-    if (closed) return;
+    if (closed || finishing) return;
     if (playing) {
       setPlaying(false);
       send('pause', Math.floor(position));
@@ -121,7 +137,7 @@ export function PlayerPage() {
   };
 
   const seek = (delta: number) => {
-    if (closed) return;
+    if (closed || finishing) return;
     const from = Math.floor(position);
     const to = Math.max(0, Math.min(duration - 1, from + delta));
     setPosition(to);
@@ -130,10 +146,19 @@ export function PlayerPage() {
   };
 
   const finish = async () => {
-    if (closed) return;
+    if (closed || finishing || finishingRef.current) return;
+    finishingRef.current = true;
+    setFinishing(true);
     setPlaying(false);
-    await send('finish', Math.floor(position));
-    toast('success', 'Reproducción finalizada');
+    try {
+      await send('finish', Math.floor(position));
+      if (closedRef.current) {
+        toast('success', 'Reproducción finalizada');
+      }
+    } finally {
+      finishingRef.current = false;
+      setFinishing(false);
+    }
   };
 
   const pct = (value: number) => `${Math.min(100, (value / duration) * 100)}%`;
@@ -160,24 +185,37 @@ export function PlayerPage() {
       </div>
       <div className="times">
         <span>{clock(position)}</span>
+        {syncing && (
+          <span className="sync-indicator" role="status" aria-live="polite">
+            <InlineSpinner />
+            Guardando progreso...
+          </span>
+        )}
         <span>{clock(duration)}</span>
       </div>
 
       <div className="controls">
-        <button className="btn btn-ghost" onClick={() => seek(-10)} disabled={closed}>
+        <button className="btn btn-ghost" onClick={() => seek(-10)} disabled={closed || finishing}>
           ⟲ 10 s
         </button>
-        <button className="btn btn-primary" onClick={togglePlay} disabled={closed}>
+        <button className="btn btn-primary" onClick={togglePlay} disabled={closed || finishing}>
           {playing ? '❚❚ Pausar' : '▶ Reanudar'}
         </button>
-        <button className="btn btn-ghost" onClick={() => seek(30)} disabled={closed}>
+        <button className="btn btn-ghost" onClick={() => seek(30)} disabled={closed || finishing}>
           Avanzar 30 s ⟳
         </button>
-        <button className="btn btn-ghost" onClick={() => seek(300)} disabled={closed}>
+        <button className="btn btn-ghost" onClick={() => seek(300)} disabled={closed || finishing}>
           Avanzar 5 min ⏩
         </button>
-        <button className="btn btn-danger" onClick={finish} disabled={closed}>
-          ■ Finalizar
+        <button className="btn btn-danger" onClick={finish} disabled={closed || finishing}>
+          {finishing ? (
+            <>
+              <InlineSpinner />
+              Finalizando...
+            </>
+          ) : (
+            '■ Finalizar'
+          )}
         </button>
       </div>
 

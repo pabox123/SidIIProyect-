@@ -1,11 +1,13 @@
 import { FormEvent, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 import { errorMessage } from '../api/client';
-import { ErrorBox } from '../components/ui';
+import { ErrorBox, InlineSpinner } from '../components/ui';
 
 export function LoginPage() {
   const { session, loginClient, loginAdmin, register } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
   const [mode, setMode] = useState<'client' | 'register' | 'admin'>((location.state as any)?.admin ? 'admin' : 'client');
@@ -19,8 +21,15 @@ export function LoginPage() {
   if (session.kind === 'client') return <Navigate to="/profiles" replace />;
   if (session.kind === 'admin') return <Navigate to="/admin" replace />;
 
+  const switchMode = (nextMode: 'client' | 'register' | 'admin') => {
+    if (busy) return;
+    setMode(nextMode);
+    setError(null);
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
     setError(null);
     if (!email.trim() || !password) {
       setError('Ingrese su correo y contraseña');
@@ -44,12 +53,15 @@ export function LoginPage() {
     try {
       if (mode === 'client') {
         await loginClient(email.trim(), password);
+        toast('success', 'Sesión iniciada');
         navigate('/profiles');
       } else if (mode === 'register') {
         await register(fullName.trim(), email.trim(), password);
+        toast('success', 'Cuenta creada correctamente');
         navigate('/account');
       } else {
         await loginAdmin(email.trim(), password);
+        toast('success', 'Sesión de administrador iniciada');
         navigate('/admin');
       }
     } catch (err) {
@@ -69,7 +81,8 @@ export function LoginPage() {
             role="tab"
             aria-selected={mode === 'client'}
             className={mode === 'client' ? 'active' : ''}
-            onClick={() => setMode('client')}
+            disabled={busy}
+            onClick={() => switchMode('client')}
           >
             Clientes
           </button>
@@ -78,7 +91,8 @@ export function LoginPage() {
             role="tab"
             aria-selected={mode === 'register'}
             className={mode === 'register' ? 'active' : ''}
-            onClick={() => setMode('register')}
+            disabled={busy}
+            onClick={() => switchMode('register')}
           >
             Crear cuenta
           </button>
@@ -87,7 +101,8 @@ export function LoginPage() {
             role="tab"
             aria-selected={mode === 'admin'}
             className={mode === 'admin' ? 'active' : ''}
-            onClick={() => setMode('admin')}
+            disabled={busy}
+            onClick={() => switchMode('admin')}
           >
             Administradores
           </button>
@@ -95,18 +110,19 @@ export function LoginPage() {
         {mode === 'register' && (
           <label>
             Nombre completo
-            <input autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+            <input autoComplete="name" disabled={busy} value={fullName} onChange={(e) => setFullName(e.target.value)} />
           </label>
         )}
         <label>
           Correo
-          <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input type="email" autoComplete="username" disabled={busy} value={email} onChange={(e) => setEmail(e.target.value)} />
         </label>
         <label>
           Contraseña
           <input
             type="password"
             autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+            disabled={busy}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
@@ -114,12 +130,21 @@ export function LoginPage() {
         {mode === 'register' && (
           <label>
             Confirmar contraseña
-            <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            <input type="password" autoComplete="new-password" disabled={busy} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
           </label>
         )}
         {error && <ErrorBox message={error} />}
         <button className="btn btn-primary" disabled={busy}>
-          {busy ? 'Procesando...' : mode === 'register' ? 'Crear cuenta' : 'Ingresar'}
+          {busy ? (
+            <>
+              <InlineSpinner />
+              {mode === 'register' ? 'Creando cuenta...' : 'Iniciando sesión...'}
+            </>
+          ) : mode === 'register' ? (
+            'Crear cuenta'
+          ) : (
+            'Ingresar'
+          )}
         </button>
       </form>
     </div>

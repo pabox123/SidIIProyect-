@@ -4,7 +4,7 @@ import { useToast } from '../context/ToastContext';
 import { accountApi } from '../api/endpoints';
 import { errorMessage } from '../api/client';
 import type { AccountProfiles, AccountSubscriptions, Plan } from '../api/types';
-import { Badge, ErrorBox, Spinner } from '../components/ui';
+import { Badge, ErrorBox, InlineSpinner, Spinner } from '../components/ui';
 import { ageLabel, date, money } from '../utils/format';
 
 /**
@@ -20,8 +20,11 @@ export function AccountPage() {
   const [subs, setSubs] = useState<AccountSubscriptions | null>(null);
   const [profiles, setProfiles] = useState<AccountProfiles | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [busyPlanId, setBusyPlanId] = useState<number | null>(null);
+  const [busyCreateProfile, setBusyCreateProfile] = useState(false);
+  const [busyProfileId, setBusyProfileId] = useState<number | null>(null);
   const [rejectPayment, setRejectPayment] = useState(false);
   const [name, setName] = useState('');
   const [rating, setRating] = useState(18);
@@ -42,48 +45,81 @@ export function AccountPage() {
     load();
   }, [load]);
 
-  const run = async (action: () => Promise<unknown>, success: string) => {
-    setBusy(true);
-    setActionError(null);
+  const subscribe = async (plan: Plan) => {
+    if (busyPlanId !== null) return;
+    setBusyPlanId(plan.planId);
+    setPlanError(null);
     try {
-      await action();
-      toast('success', success);
+      await accountApi.subscribe(plan.planId, !rejectPayment);
+      toast('success', `Plan ${plan.name} contratado`);
       await Promise.all([load(), refreshMe()]);
     } catch (err) {
-      // Rechazos del servidor: suscripción vigente, exceso de perfiles, pago rechazado...
-      setActionError(errorMessage(err));
+      const msg = errorMessage(err);
+      setPlanError(msg);
+      toast('error', msg);
     } finally {
-      setBusy(false);
+      setBusyPlanId(null);
     }
   };
 
-  const createProfile = (event: FormEvent) => {
+  const toggleProfile = async (profileId: number, isActive: boolean) => {
+    if (busyProfileId !== null || busyCreateProfile) return;
+    setBusyProfileId(profileId);
+    setProfileError(null);
+    try {
+      await accountApi.setProfileActive(profileId, !isActive);
+      toast('success', isActive ? 'Perfil desactivado' : 'Perfil activado');
+      await Promise.all([load(), refreshMe()]);
+    } catch (err) {
+      const msg = errorMessage(err);
+      setProfileError(msg);
+      toast('error', msg);
+    } finally {
+      setBusyProfileId(null);
+    }
+  };
+
+  const createProfile = async (event: FormEvent) => {
     event.preventDefault();
+    if (busyCreateProfile || busyProfileId !== null) return;
     if (!name.trim()) {
-      setActionError('Escriba el nombre del perfil');
+      const msg = 'Escriba el nombre del perfil';
+      setProfileError(msg);
+      toast('error', msg);
       return;
     }
-    run(async () => {
+    setBusyCreateProfile(true);
+    setProfileError(null);
+    try {
       await accountApi.createProfile(name.trim(), rating);
       setName('');
-    }, 'Perfil creado');
+      toast('success', 'Perfil creado');
+      await Promise.all([load(), refreshMe()]);
+    } catch (err) {
+      const msg = errorMessage(err);
+      setProfileError(msg);
+      toast('error', msg);
+    } finally {
+      setBusyCreateProfile(false);
+    }
   };
 
   if (error) return <ErrorBox message={error} onRetry={load} />;
-  if (!subs || !profiles) return <Spinner />;
+  if (!subs || !profiles) return <Spinner label="Cargando información de la cuenta..." />;
 
   const active = subs.activeSubscription;
+  const profileBusy = busyProfileId !== null || busyCreateProfile;
 
   return (
     <section className="account-page">
       <h1>Mi cuenta</h1>
-      {actionError && <ErrorBox message={actionError} />}
 
       <article className="report">
         <header>
           <h2>Suscripción</h2>
           {active ? <Badge tone="success">Vigente</Badge> : <Badge tone="warning">Sin suscripción vigente</Badge>}
         </header>
+        {planError && <ErrorBox message={planError} />}
         {active ? (
           <p>
             Plan <strong>{active.planName}</strong> ({money(active.planPrice)}, hasta {active.maxProfiles} perfiles
@@ -100,18 +136,28 @@ export function AccountPage() {
                   <p className="muted small">Hasta {plan.maxProfiles} perfil{plan.maxProfiles === 1 ? '' : 'es'} activos</p>
                   <button
                     className="btn btn-primary btn-sm"
-                    disabled={busy}
-                    onClick={() =>
-                      run(() => accountApi.subscribe(plan.planId, !rejectPayment), `Plan ${plan.name} contratado`)
-                    }
+                    disabled={busyPlanId !== null}
+                    onClick={() => subscribe(plan)}
                   >
-                    Contratar
+                    {busyPlanId === plan.planId ? (
+                      <>
+                        <InlineSpinner />
+                        Contratando...
+                      </>
+                    ) : (
+                      'Contratar'
+                    )}
                   </button>
                 </div>
               ))}
             </div>
             <label className="checkbox">
-              <input type="checkbox" checked={rejectPayment} onChange={(e) => setRejectPayment(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={rejectPayment}
+                disabled={busyPlanId !== null}
+                onChange={(e) => setRejectPayment(e.target.checked)}
+              />
               Simular pago rechazado
             </label>
           </>
@@ -126,6 +172,7 @@ export function AccountPage() {
             {profiles.hasActiveSubscription ? ` de ${profiles.maxProfiles} permitidos` : ''}
           </span>
         </header>
+        {profileError && <ErrorBox message={profileError} />}
         <table className="table">
           <thead>
             <tr>
@@ -136,38 +183,45 @@ export function AccountPage() {
             </tr>
           </thead>
           <tbody>
-            {profiles.profiles.map((p) => (
-              <tr key={p.profileId}>
-                <td>{p.name}</td>
-                <td>Hasta {ageLabel(p.maxAgeRating)}</td>
-                <td>{p.isActive ? <Badge tone="success">Activo</Badge> : <Badge>Desactivado</Badge>}</td>
-                <td className="row-actions">
-                  <button
-                    className={`btn btn-sm ${p.isActive ? 'btn-danger' : 'btn-ghost'}`}
-                    disabled={busy}
-                    onClick={() =>
-                      run(
-                        () => accountApi.setProfileActive(p.profileId, !p.isActive),
-                        p.isActive ? 'Perfil desactivado' : 'Perfil activado',
-                      )
-                    }
-                  >
-                    {p.isActive ? 'Desactivar' : 'Activar'}
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {profiles.profiles.map((p) => {
+              const isRowBusy = busyProfileId === p.profileId;
+              return (
+                <tr key={p.profileId}>
+                  <td>{p.name}</td>
+                  <td>Hasta {ageLabel(p.maxAgeRating)}</td>
+                  <td>{p.isActive ? <Badge tone="success">Activo</Badge> : <Badge>Desactivado</Badge>}</td>
+                  <td className="row-actions">
+                    <button
+                      className={`btn btn-sm ${p.isActive ? 'btn-danger' : 'btn-ghost'}`}
+                      disabled={profileBusy}
+                      onClick={() => toggleProfile(p.profileId, p.isActive)}
+                    >
+                      {isRowBusy ? (
+                        <>
+                          <InlineSpinner />
+                          {p.isActive ? 'Desactivando...' : 'Activando...'}
+                        </>
+                      ) : p.isActive ? (
+                        'Desactivar'
+                      ) : (
+                        'Activar'
+                      )}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         {profiles.profiles.length === 0 && <p className="empty">Todavía no tiene perfiles.</p>}
         <form className="filters" onSubmit={createProfile}>
           <label>
             Nombre del perfil
-            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} />
+            <input value={name} disabled={profileBusy} onChange={(e) => setName(e.target.value)} maxLength={60} />
           </label>
           <label>
             Clasificación máxima
-            <select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
+            <select value={rating} disabled={profileBusy} onChange={(e) => setRating(Number(e.target.value))}>
               {[0, 7, 12, 16, 18].map((r) => (
                 <option key={r} value={r}>
                   {ageLabel(r)}
@@ -175,8 +229,15 @@ export function AccountPage() {
               ))}
             </select>
           </label>
-          <button className="btn btn-primary" disabled={busy}>
-            + Crear perfil
+          <button className="btn btn-primary" disabled={profileBusy}>
+            {busyCreateProfile ? (
+              <>
+                <InlineSpinner />
+                Creando perfil...
+              </>
+            ) : (
+              '+ Crear perfil'
+            )}
           </button>
         </form>
       </article>

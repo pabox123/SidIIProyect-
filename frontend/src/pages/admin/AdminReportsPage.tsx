@@ -3,7 +3,7 @@ import { reportsApi } from '../../api/endpoints';
 import { download, errorMessage } from '../../api/client';
 import type { ConsumptionRow, Report, RevenueRow } from '../../api/types';
 import { useToast } from '../../context/ToastContext';
-import { Empty, ErrorBox, Spinner } from '../../components/ui';
+import { Empty, ErrorBox, InlineSpinner, Spinner } from '../../components/ui';
 import { isoDay, money, number } from '../../utils/format';
 
 type Revenue = Report<RevenueRow, { subscriptions: number; totalRevenue: number }>;
@@ -19,6 +19,10 @@ export function AdminReportsPage() {
   const [consumption, setConsumption] = useState<Consumption | null>(null);
   const [errors, setErrors] = useState<{ revenue?: string; consumption?: string }>({});
   const [loading, setLoading] = useState(false);
+  const [downloadingCsv, setDownloadingCsv] = useState<{ revenue: boolean; consumption: boolean }>({
+    revenue: false,
+    consumption: false,
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,6 +47,7 @@ export function AdminReportsPage() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (loading) return;
     if (to < from) {
       toast('error', 'La fecha final no puede ser anterior a la inicial');
       return;
@@ -51,10 +56,15 @@ export function AdminReportsPage() {
   };
 
   const csv = async (kind: 'revenue' | 'consumption') => {
+    if (downloadingCsv[kind]) return;
+    setDownloadingCsv((prev) => ({ ...prev, [kind]: true }));
     try {
       await download(`/admin/reports/${kind}`, { ...range, format: 'csv' }, `${kind}.csv`);
+      toast('success', 'CSV descargado');
     } catch (err) {
       toast('error', errorMessage(err));
+    } finally {
+      setDownloadingCsv((prev) => ({ ...prev, [kind]: false }));
     }
   };
 
@@ -64,14 +74,22 @@ export function AdminReportsPage() {
       <form className="filters" onSubmit={submit}>
         <label>
           Desde
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <input type="date" disabled={loading} value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
         <label>
           Hasta
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <input type="date" disabled={loading} value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
-        <button className="btn btn-primary">Consultar</button>
-        {loading && <Spinner label="Consultando..." />}
+        <button className="btn btn-primary" disabled={loading}>
+          {loading ? (
+            <>
+              <InlineSpinner />
+              Consultando...
+            </>
+          ) : (
+            'Consultar'
+          )}
+        </button>
       </form>
 
       <article className="report">
@@ -80,16 +98,31 @@ export function AdminReportsPage() {
             <h2>Ingresos por plan</h2>
             <p className="muted small">PostgreSQL · pagos aprobados con fecha de pago en el rango</p>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => csv('revenue')} disabled={!revenue}>
-            ⬇ CSV
-          </button>
+          <div className="row-actions">
+            {loading && revenue && <InlineSpinner label="Actualizando..." />}
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => csv('revenue')}
+              disabled={!revenue || loading || downloadingCsv.revenue}
+            >
+              {downloadingCsv.revenue ? (
+                <>
+                  <InlineSpinner />
+                  Descargando...
+                </>
+              ) : (
+                '⬇ CSV'
+              )}
+            </button>
+          </div>
         </header>
         {errors.revenue && <ErrorBox message={errors.revenue} onRetry={load} />}
+        {loading && !revenue && !errors.revenue && <Spinner label="Cargando ingresos..." />}
         {revenue &&
           (revenue.rows.length === 0 ? (
             <Empty>Sin datos.</Empty>
           ) : (
-            <table className="table">
+            <table className={`table ${loading ? 'is-loading' : ''}`}>
               <thead>
                 <tr>
                   <th>Plan</th>
@@ -128,16 +161,31 @@ export function AdminReportsPage() {
               MongoDB (sesiones iniciadas en el rango, con el plan vigente en ese momento) + PostgreSQL (nombres de planes)
             </p>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => csv('consumption')} disabled={!consumption}>
-            ⬇ CSV
-          </button>
+          <div className="row-actions">
+            {loading && consumption && <InlineSpinner label="Actualizando..." />}
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => csv('consumption')}
+              disabled={!consumption || loading || downloadingCsv.consumption}
+            >
+              {downloadingCsv.consumption ? (
+                <>
+                  <InlineSpinner />
+                  Descargando...
+                </>
+              ) : (
+                '⬇ CSV'
+              )}
+            </button>
+          </div>
         </header>
         {errors.consumption && <ErrorBox message={errors.consumption} onRetry={load} />}
+        {loading && !consumption && !errors.consumption && <Spinner label="Cargando consumo..." />}
         {consumption &&
           (consumption.rows.length === 0 ? (
             <Empty>No hay sesiones de reproducción en el rango.</Empty>
           ) : (
-            <table className="table">
+            <table className={`table ${loading ? 'is-loading' : ''}`}>
               <thead>
                 <tr>
                   <th>Plan</th>
