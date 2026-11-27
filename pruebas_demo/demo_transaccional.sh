@@ -38,6 +38,13 @@ else
   CONN_DISPLAY="postgresql://${PGUSER}:****@${PGHOST}:${PGPORT}/${PGDATABASE}"
 fi
 
+# Detect pooler
+if [[ "${CONN_DISPLAY}" == *"-pooler"* ]]; then
+  echo "ADVERTENCIA: Conexión usa pooler (-pooler). Las pruebas necesitan conexión directa (pg_terminate_backend no funciona con pooler)."
+  echo "Deteniendo. Use conexión directa a la base de datos."
+  exit 1
+fi
+
 echo "================================================================="
 echo "CineConecta - Demo Transaccional M-06"
 echo "================================================================="
@@ -65,10 +72,30 @@ log "Inicio: $(date '+%Y-%m-%d %H:%M:%S')"
 log "Conexión: ${CONN_DISPLAY}"
 log ""
 
+# RUNID único para esta ejecución: 6 chars hex
+RUNID=$(openssl rand -hex 3 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | head -c 6)
+EMAIL_PREFIX="demo_tx_${RUNID}"
+log "RUNID: ${RUNID} (prefijo de prueba: ${EMAIL_PREFIX}_*@example.com)"
+
+# Verificar permisos de DELETE en las 4 tablas con has_table_privilege
+log "Verificando permisos de DELETE en tablas de prueba..."
+CAN_DELETE_ACCOUNTS=$(run_psql "SELECT has_table_privilege(current_user, 'accounts', 'DELETE');" | tail -n +3 | head -n 1 | xargs)
+CAN_DELETE_PROFILES=$(run_psql "SELECT has_table_privilege(current_user, 'profiles', 'DELETE');" | tail -n +3 | head -n 1 | xargs)
+CAN_DELETE_SUBS=$(run_psql "SELECT has_table_privilege(current_user, 'subscriptions', 'DELETE');" | tail -n +3 | head -n 1 | xargs)
+CAN_DELETE_PAYS=$(run_psql "SELECT has_table_privilege(current_user, 'payments', 'DELETE');" | tail -n +3 | head -n 1 | xargs)
+
+HAS_DELETE=false
+if [[ "${CAN_DELETE_ACCOUNTS}" == "t" && "${CAN_DELETE_PROFILES}" == "t" && "${CAN_DELETE_SUBS}" == "t" && "${CAN_DELETE_PAYS}" == "t" ]]; then
+  HAS_DELETE=true
+  log "Permisos DELETE: SÍ (accounts=${CAN_DELETE_ACCOUNTS}, profiles=${CAN_DELETE_PROFILES}, subscriptions=${CAN_DELETE_SUBS}, payments=${CAN_DELETE_PAYS})"
+else
+  log "Permisos DELETE: NO (accounts=${CAN_DELETE_ACCOUNTS}, profiles=${CAN_DELETE_PROFILES}, subscriptions=${CAN_DELETE_SUBS}, payments=${CAN_DELETE_PAYS})"
+  log "La limpieza será manual con pruebas_demo/limpieza_owner.sql"
+fi
+
 gen_test_email() {
-  local prefix="demo_tx"
   local random_suffix=$(openssl rand -hex 6 2>/dev/null || cat /dev/urandom | tr -dc 'a-f0-9' | head -c 12)
-  echo "${prefix}_${random_suffix}@example.com"
+  echo "${EMAIL_PREFIX}_${random_suffix}@example.com"
 }
 
 gen_test_reference() {
@@ -93,60 +120,37 @@ create_test_account() {
   " | tail -n +3 | head -n 1 | xargs
 }
 
-register_test_account() {
-  local account_id="$1"
-  run_psql "
-    CREATE TEMP TABLE IF NOT EXISTS demo_tx_accounts (accountId INTEGER PRIMARY KEY);
-    INSERT INTO demo_tx_accounts (accountId) VALUES (${account_id})
-    ON CONFLICT DO NOTHING;
-  " >/dev/null
-}
-
 cleanup_test_data() {
   log ""
   log "=== LIMPIEZA DE DATOS DE PRUEBA ==="
 
   if [[ "${CONSERVAR}" == "true" ]]; then
     log "Opción --conservar activada: NO se borran los datos de prueba."
-    log "Cuentas de prueba registradas:"
-    run_psql "SELECT accountId, email FROM accounts WHERE email LIKE 'demo_tx_%' ORDER BY accountId;" | tee -a "${SALIDA_FILE}"
+    log "Cuentas de prueba de esta corrida (${EMAIL_PREFIX}_*@example.com):"
+    run_psql "SELECT accountId, email FROM accounts WHERE email LIKE '${EMAIL_PREFIX}_%@example.com' ORDER BY accountId;" | tee -a "${SALIDA_FILE}"
     return 0
   fi
 
-  local account_ids=$(run_psql "SELECT accountId FROM demo_tx_accounts ORDER BY accountId;" 2>/dev/null | tail -n +3 | head -n -1 | xargs)
-
-  if [[ -z "${account_ids}" ]]; then
-    log "No hay cuentas de prueba registradas para limpiar."
-    return 0
-  fi
-
-  log "Cuentas a limpiar: ${account_ids}"
-
-  for acc in ${account_ids}; do
-    log "Limpiando accountId=${acc}..."
-
+  if [[ "${HAS_DELETE}" == "true" ]]; then
+    log "Ejecutando limpieza automática (DELETE en una transacción)..."
     run_psql "
+      BEGIN;
       DELETE FROM payments
-      WHERE subscriptionId IN (SELECT subscriptionId FROM subscriptions WHERE accountId = ${acc});
-    " >/dev/null && log "  Pagos borrados" || log "  ERROR borrando pagos"
-
-    run_psql "
-      DELETE FROM subscriptions WHERE accountId = ${acc};
-    " >/dev/null && log "  Suscripciones borradas" || log "  ERROR borrando suscripciones"
-
-    run_psql "
-      DELETE FROM profiles WHERE accountId = ${acc};
-    " >/dev/null && log "  Perfiles borrados" || log "  ERROR borrando perfiles"
-
-    run_psql "
-      DELETE FROM accounts WHERE accountId = ${acc};
-    " >/dev/null && log "  Cuenta borrada" || log "  ERROR borrando cuenta"
-  done
-
-  run_psql "DROP TABLE IF EXISTS demo_tx_accounts;" >/dev/null
-  log "Limpieza completada."
+      WHERE subscriptionId IN (SELECT subscriptionId FROM subscriptions WHERE accountId IN (SELECT accountId FROM accounts WHERE email LIKE '${EMAIL_PREFIX}_%@example.com'));
+      DELETE FROM subscriptions WHERE accountId IN (SELECT accountId FROM accounts WHERE email LIKE '${EMAIL_PREFIX}_%@example.com');
+      DELETE FROM profiles WHERE accountId IN (SELECT accountId FROM accounts WHERE email LIKE '${EMAIL_PREFIX}_%@example.com');
+      DELETE FROM accounts WHERE email LIKE '${EMAIL_PREFIX}_%@example.com';
+      COMMIT;
+    " >/dev/null && log "Limpieza completada (pagos → suscripciones → perfiles → cuentas)." || log "ERROR en limpieza automática"
+  else
+    local remaining=$(run_psql "SELECT count(*) FROM accounts WHERE email LIKE '${EMAIL_PREFIX}_%@example.com';" | tail -n +3 | head -n 1 | xargs)
+    log "Sin permiso DELETE. Limpieza pendiente: ejecutar pruebas_demo/limpieza_owner.sql con el usuario dueño."
+    log "Cuentas demo_tx_ de esta corrida que quedan en la base: ${remaining}"
+  fi
 }
 
+# Trap ERR para mostrar línea de error
+trap 'echo "ERROR en la línea $LINENO" >&2' ERR
 trap 'cleanup_test_data; log "INTERRUMPIDO - Limpieza ejecutada"; exit 1' INT TERM
 
 log "Verificando existencia de sp_contratar_suscripcion..."
@@ -166,28 +170,30 @@ if [[ -z "${PLAN_ID}" ]]; then
 fi
 log "Plan de prueba: planId=${PLAN_ID}"
 
+# ================================================================
+# PRUEBA 1: Dos contrataciones simultáneas de la misma cuenta
+# ================================================================
 log ""
 log "================================================================="
-log "PRUEBA 1: Dos contrataciones simultáneas de la misma cuenta"
+log "PRUEBA 1: Concurrencia - dos sesiones, misma cuenta"
 log "================================================================="
 
 PRUEBA1_PASS=true
+PRUEBA1_DETAILS=()
 
+# --- Versión determinista (con pg_sleep) ---
 log ""
-log "--- Versión determinista (con pg_sleep) ---"
+log "--- Versión determinista (pg_sleep) ---"
 
 EMAIL1=$(gen_test_email)
 ACCOUNT1=$(create_test_account "${EMAIL1}" "${PLAN_ID}")
-register_test_account "${ACCOUNT1}"
-log "Cuenta creada: accountId=${ACCOUNT1}, email=${EMAIL1}"
+log "Cuenta: accountId=${ACCOUNT1}"
 
 REF1=$(gen_test_reference)
 REF2=$(gen_test_reference)
-log "Referencias: ${REF1} (sesión A), ${REF2} (sesión B)"
+log "Referencias: A=${REF1}, B=${REF2}"
 
-log "Sesión A: Inicia transacción, llama sp_contratar_suscripcion, pg_sleep(3), COMMIT"
-log "Sesión B: Espera 1s, llama sp_contratar_suscripcion (debe bloquear y fallar)"
-
+# Ejecutar sesión A en background (con pg_sleep)
 (
   PGOPTIONS="-c timezone=UTC" psql -v ON_ERROR_STOP=1 -q -X -c "
     BEGIN;
@@ -198,52 +204,68 @@ log "Sesión B: Espera 1s, llama sp_contratar_suscripcion (debe bloquear y falla
 ) &
 PID_A=$!
 
+# Ejecutar sesión B en background (sin pausa, debe bloquear y fallar)
 (
   PGOPTIONS="-c timezone=UTC" psql -v ON_ERROR_STOP=0 -q -X -c "SELECT sp_contratar_suscripcion(${ACCOUNT1}, ${PLAN_ID}, '${REF2}', true);" >"${SALIDA_DIR}/prueba1_b_${TIMESTAMP}.txt" 2>&1
 ) &
 PID_B=$!
 
 sleep 1
-
-log "Ejecutando sesión B..."
 wait ${PID_B} || true
 RESULT_B=$(cat "${SALIDA_DIR}/prueba1_b_${TIMESTAMP}.txt" 2>/dev/null || echo "No output file")
-log "Resultado sesión B:"
-echo "${RESULT_B}" | tee -a "${SALIDA_FILE}"
 
 wait ${PID_A} || true
 RESULT_A=$(cat "${SALIDA_DIR}/prueba1_a_${TIMESTAMP}.txt" 2>/dev/null || echo "No output file")
-log "Resultado sesión A:"
-echo "${RESULT_A}" | tee -a "${SALIDA_FILE}"
 
 SUBS_COUNT=$(run_psql "SELECT COUNT(*) FROM subscriptions WHERE accountId = ${ACCOUNT1};" | tail -n +3 | head -n 1 | xargs)
 PAYS_COUNT=$(run_psql "SELECT COUNT(*) FROM payments p JOIN subscriptions s ON s.subscriptionId = p.subscriptionId WHERE s.accountId = ${ACCOUNT1};" | tail -n +3 | head -n 1 | xargs)
 
-log "Cuenta ${ACCOUNT1}: ${SUBS_COUNT} suscripción(es), ${PAYS_COUNT} pago(s)"
+log "Cuenta ${ACCOUNT1}: ${SUBS_COUNT} sub, ${PAYS_COUNT} pago"
 
-if [[ "${SUBS_COUNT}" == "1" && "${PAYS_COUNT}" == "1" ]]; then
-  log "Versión determinista: PASS (1 sub, 1 pago, 1 error esperado)"
+# Determinar quién ganó y quién falló
+A_SUCCEEDED=false
+B_SUCCEEDED=false
+A_ERROR=""
+B_ERROR=""
+
+if echo "${RESULT_A}" | grep -q "sp_contratar_suscripcion" && echo "${RESULT_A}" | grep -q "^[[:space:]]*[0-9]"; then
+  A_SUCCEEDED=true
+elif echo "${RESULT_A}" | grep -qi "ya tiene una suscripci[oó]n vigente\|duplicate key\|exclu"; then
+  A_ERROR=$(echo "${RESULT_A}" | grep -i "ERROR\|ya tiene\|duplicate\|exclu" | head -1 | sed 's/^[[:space:]]*//')
+fi
+
+if echo "${RESULT_B}" | grep -q "sp_contratar_suscripcion" && echo "${RESULT_B}" | grep -q "^[[:space:]]*[0-9]"; then
+  B_SUCCEEDED=true
+elif echo "${RESULT_B}" | grep -qi "ya tiene una suscripci[oó]n vigente\|duplicate key\|exclu"; then
+  B_ERROR=$(echo "${RESULT_B}" | grep -i "ERROR\|ya tiene\|duplicate\|exclu" | head -1 | sed 's/^[[:space:]]*//')
+fi
+
+DET_PASS=true
+if [[ "${SUBS_COUNT}" == "1" && "${PAYS_COUNT}" == "1" && ( "${A_SUCCEEDED}" == "true" || "${B_SUCCEEDED}" == "true" ) && ( "${A_SUCCEEDED}" != "${B_SUCCEEDED}" ) ]]; then
+  log "Determinista: PASS (1 sub, 1 pago, una sesión OK, otra rechazada)"
+  if [[ "${A_SUCCEEDED}" == "true" ]]; then
+    log "  Ganó: Sesión A (ref ${REF1}) | Rechazada: Sesión B - ${B_ERROR:-error de suscripción vigente}"
+  else
+    log "  Ganó: Sesión B (ref ${REF2}) | Rechazada: Sesión A - ${A_ERROR:-error de suscripción vigente}"
+  fi
 else
-  log "Versión determinista: FAIL (esperado 1 sub + 1 pago, obtuvo ${SUBS_COUNT} sub + ${PAYS_COUNT} pago)"
+  log "Determinista: FAIL (subs=${SUBS_COUNT}, pays=${PAYS_COUNT}, A_ok=${A_SUCCEEDED}, B_ok=${B_SUCCEEDED})"
+  DET_PASS=false
   PRUEBA1_PASS=false
 fi
+PRUEBA1_DETAILS+=("Determinista: $([[ ${DET_PASS} == true ]] && echo PASS || echo FAIL)")
 
-if echo "${RESULT_B}" | grep -qi "ya tiene una suscripci[oó]n vigente\|duplicate key\|exclu"; then
-  log "Sesión B falló con error esperado (suscripción vigente / exclusión / unicidad)"
-else
-  log "Sesión B no mostró error esperado. Revisar salida arriba."
-fi
-
+# --- Versión de estrés (20 cuentas, 2 procesos paralelos cada una, sin pausa) ---
 log ""
-log "--- Versión de estrés (20 cuentas, 2 procesos paralelos cada una, sin pausa) ---"
+log "--- Versión de estrés (20 cuentas, 2 hilos cada una) ---"
 
 STRESS_PASS=0
 STRESS_FAIL=0
+STRESS_DETAILS=()
 
 for i in {1..20}; do
   EMAIL_S=$(gen_test_email)
   ACCOUNT_S=$(create_test_account "${EMAIL_S}" "${PLAN_ID}")
-  register_test_account "${ACCOUNT_S}"
 
   REF_S1=$(gen_test_reference)
   REF_S2=$(gen_test_reference)
@@ -265,20 +287,24 @@ for i in {1..20}; do
   PAYS_S=$(run_psql "SELECT COUNT(*) FROM payments p JOIN subscriptions s ON s.subscriptionId = p.subscriptionId WHERE s.accountId = ${ACCOUNT_S};" | tail -n +3 | head -n 1 | xargs)
 
   if [[ "${SUBS_S}" == "1" && "${PAYS_S}" == "1" ]]; then
-    ((STRESS_PASS++))
+    STRESS_PASS=$((STRESS_PASS+1))
+    STRESS_DETAILS+=("  Cuenta ${ACCOUNT_S}: PASS")
   else
-    ((STRESS_FAIL++))
-    log "  Cuenta ${ACCOUNT_S} (iter $i): FAIL - ${SUBS_S} sub, ${PAYS_S} pago"
+    STRESS_FAIL=$((STRESS_FAIL+1))
+    STRESS_DETAILS+=("  Cuenta ${ACCOUNT_S}: FAIL (${SUBS_S} sub, ${PAYS_S} pago)")
+    PRUEBA1_PASS=false
   fi
 done
 
-log "Resultados estrés: ${STRESS_PASS}/20 PASS, ${STRESS_FAIL}/20 FAIL"
+log "Estrés: ${STRESS_PASS}/20 PASS, ${STRESS_FAIL}/20 FAIL"
+for d in "${STRESS_DETAILS[@]}"; do log "${d}"; done
 
 if [[ ${STRESS_FAIL} -eq 0 ]]; then
-  log "Versión de estrés: PASS (todas las 20 cuentas con 1 sub + 1 pago)"
+  log "Estrés: PASS (todas 20 cuentas con 1 sub + 1 pago)"
+  PRUEBA1_DETAILS+=("Estrés: PASS")
 else
-  log "Versión de estrés: FAIL (${STRESS_FAIL} cuentas con conteo incorrecto)"
-  PRUEBA1_PASS=false
+  log "Estrés: FAIL (${STRESS_FAIL} cuentas con conteo incorrecto)"
+  PRUEBA1_DETAILS+=("Estrés: FAIL")
 fi
 
 log ""
@@ -290,47 +316,52 @@ else
   PRUEBA1_RESULT="FAIL"
 fi
 
+# ================================================================
+# PRUEBA 2: Fallo a mitad de transacción (atomicidad)
+# ================================================================
 log ""
 log "================================================================="
-log "PRUEBA 2: Fallo a mitad de transacción (atomicidad)"
+log "PRUEBA 2: Atomicidad - fallo a mitad de transacción"
 log "================================================================="
 
 PRUEBA2_PASS=true
+PRUEBA2_DETAILS=()
 
+# --- Variante 2a: reference duplicada en payment ---
 log ""
-log "--- Variante 2a: reference duplicada en payment ---"
+log "--- 2a: reference duplicada en payment ---"
 
 EMAIL_2A=$(gen_test_email)
 ACCOUNT_2A=$(create_test_account "${EMAIL_2A}" "${PLAN_ID}")
-register_test_account "${ACCOUNT_2A}"
 
 REF_EXISTING=$(gen_test_reference)
 run_psql "SELECT sp_contratar_suscripcion(${ACCOUNT_2A}, ${PLAN_ID}, '${REF_EXISTING}', true);" >/dev/null
-log "Reference existente creada: ${REF_EXISTING}"
+log "Reference existente: ${REF_EXISTING}"
 
 REF_DUP="${REF_EXISTING}"
-RESULT_2A=$(run_psql_capture "SELECT sp_contratar_suscripcion(${ACCOUNT_2A}, ${PLAN_ID}, '${REF_DUP}', true);" 2>&1)
-log "Resultado:"
-echo "${RESULT_2A}" | tee -a "${SALIDA_FILE}"
+RESULT_2A=$(run_psql_capture "SELECT sp_contratar_suscripcion(${ACCOUNT_2A}, ${PLAN_ID}, '${REF_DUP}', true);" 2>&1) || true
+log "Resultado: $(echo "${RESULT_2A}" | head -1 | sed 's/^[[:space:]]*//')"
 
 SUBS_2A=$(run_psql "SELECT COUNT(*) FROM subscriptions WHERE accountId = ${ACCOUNT_2A};" | tail -n +3 | head -n 1 | xargs)
 PAYS_2A=$(run_psql "SELECT COUNT(*) FROM payments p JOIN subscriptions s ON s.subscriptionId = p.subscriptionId WHERE s.accountId = ${ACCOUNT_2A};" | tail -n +3 | head -n 1 | xargs)
 
-log "Cuenta ${ACCOUNT_2A}: ${SUBS_2A} suscripción(es), ${PAYS_2A} pago(s) (esperado: 1, 1 - la original)"
+log "Cuenta ${ACCOUNT_2A}: ${SUBS_2A} sub, ${PAYS_2A} pago (esperado: 1, 1)"
 
 if [[ "${SUBS_2A}" == "1" && "${PAYS_2A}" == "1" ]]; then
-  log "Variante 2a: PASS (rollback atómico, datos originales intactos)"
+  log "2a: PASS (rollback atómico, datos originales intactos)"
+  PRUEBA2_DETAILS+=("2a: PASS")
 else
-  log "Variante 2a: FAIL (esperado 1 sub + 1 pago, obtuvo ${SUBS_2A} sub + ${PAYS_2A} pago)"
+  log "2a: FAIL (esperado 1 sub + 1 pago, obtuvo ${SUBS_2A} sub + ${PAYS_2A} pago)"
   PRUEBA2_PASS=false
+  PRUEBA2_DETAILS+=("2a: FAIL")
 fi
 
+# --- Variante 2b: Error provocado (división por cero) tras INSERT subscription ---
 log ""
-log "--- Variante 2b: Error provocado (división por cero) tras INSERT subscription ---"
+log "--- 2b: división por cero tras INSERT subscription ---"
 
 EMAIL_2B=$(gen_test_email)
 ACCOUNT_2B=$(create_test_account "${EMAIL_2B}" "${PLAN_ID}")
-register_test_account "${ACCOUNT_2B}"
 
 REF_2B=$(gen_test_reference)
 
@@ -342,28 +373,29 @@ RESULT_2B=$(run_psql_capture "
   INSERT INTO payments (subscriptionId, paidAt, amount, reference)
   VALUES (currval('subscriptions_subscriptionid_seq'), CURRENT_TIMESTAMP, (SELECT price FROM plans WHERE planId = ${PLAN_ID}), '${REF_2B}');
   COMMIT;
-" 2>&1)
-log "Resultado (esperado error división por cero):"
-echo "${RESULT_2B}" | tee -a "${SALIDA_FILE}"
+" 2>&1) || true
+log "Resultado: $(echo "${RESULT_2B}" | head -1 | sed 's/^[[:space:]]*//')"
 
 SUBS_2B=$(run_psql "SELECT COUNT(*) FROM subscriptions WHERE accountId = ${ACCOUNT_2B};" | tail -n +3 | head -n 1 | xargs)
 PAYS_2B=$(run_psql "SELECT COUNT(*) FROM payments p JOIN subscriptions s ON s.subscriptionId = p.subscriptionId WHERE s.accountId = ${ACCOUNT_2B};" | tail -n +3 | head -n 1 | xargs)
 
-log "Cuenta ${ACCOUNT_2B}: ${SUBS_2B} suscripción(es), ${PAYS_2B} pago(s) (esperado: 0, 0)"
+log "Cuenta ${ACCOUNT_2B}: ${SUBS_2B} sub, ${PAYS_2B} pago (esperado: 0, 0)"
 
 if [[ "${SUBS_2B}" == "0" && "${PAYS_2B}" == "0" ]]; then
-  log "Variante 2b: PASS (rollback completo, cero registros)"
+  log "2b: PASS (rollback completo, cero registros)"
+  PRUEBA2_DETAILS+=("2b: PASS")
 else
-  log "Variante 2b: FAIL (esperado 0 sub + 0 pago, obtuvo ${SUBS_2B} sub + ${PAYS_2B} pago)"
+  log "2b: FAIL (esperado 0 sub + 0 pago, obtuvo ${SUBS_2B} sub + ${PAYS_2B} pago)"
   PRUEBA2_PASS=false
+  PRUEBA2_DETAILS+=("2b: FAIL")
 fi
 
+# --- Variante 2c: pg_terminate_backend durante pg_sleep(10) ---
 log ""
-log "--- Variante 2c: pg_terminate_backend durante pg_sleep(10) ---"
+log "--- 2c: pg_terminate_backend durante pg_sleep(10) ---"
 
 EMAIL_2C=$(gen_test_email)
 ACCOUNT_2C=$(create_test_account "${EMAIL_2C}" "${PLAN_ID}")
-register_test_account "${ACCOUNT_2C}"
 
 REF_2C=$(gen_test_reference)
 
@@ -389,7 +421,7 @@ if [[ -n "${BACKEND_PID}" && "${BACKEND_PID}" != "0" ]]; then
   log "Terminando backend PID=${BACKEND_PID}..."
   run_psql "SELECT pg_terminate_backend(${BACKEND_PID});" >/dev/null
 else
-  log "No se encontró backend activo para accountId=${ACCOUNT_2C}, reintentando..."
+  log "No se encontró backend activo, reintentando..."
   sleep 1
   BACKEND_PID=$(run_psql "
     SELECT pid FROM pg_stat_activity
@@ -406,21 +438,23 @@ wait ${PID_SLEEP} 2>/dev/null || true
 SUBS_2C=$(run_psql "SELECT COUNT(*) FROM subscriptions WHERE accountId = ${ACCOUNT_2C};" | tail -n +3 | head -n 1 | xargs)
 PAYS_2C=$(run_psql "SELECT COUNT(*) FROM payments p JOIN subscriptions s ON s.subscriptionId = p.subscriptionId WHERE s.accountId = ${ACCOUNT_2C};" | tail -n +3 | head -n 1 | xargs)
 
-log "Cuenta ${ACCOUNT_2C}: ${SUBS_2C} suscripción(es), ${PAYS_2C} pago(s) (esperado: 0, 0)"
+log "Cuenta ${ACCOUNT_2C}: ${SUBS_2C} sub, ${PAYS_2C} pago (esperado: 0, 0)"
 
 if [[ "${SUBS_2C}" == "0" && "${PAYS_2C}" == "0" ]]; then
-  log "Variante 2c: PASS (terminación de backend causó rollback, cero registros)"
+  log "2c: PASS (terminación causó rollback, cero registros)"
+  PRUEBA2_DETAILS+=("2c: PASS")
 else
-  log "Variante 2c: FAIL (esperado 0 sub + 0 pago, obtuvo ${SUBS_2C} sub + ${PAYS_2C} pago)"
+  log "2c: FAIL (esperado 0 sub + 0 pago, obtuvo ${SUBS_2C} sub + ${PAYS_2C} pago)"
   PRUEBA2_PASS=false
+  PRUEBA2_DETAILS+=("2c: FAIL")
 fi
 
+# --- Variante 2d (opcional): Trigger diferido - suscripción sin pago ---
 log ""
-log "--- Variante 2d (opcional): Trigger diferido - suscripción sin pago ---"
+log "--- 2d: trigger diferido (suscripción sin pago) ---"
 
 EMAIL_2D=$(gen_test_email)
 ACCOUNT_2D=$(create_test_account "${EMAIL_2D}" "${PLAN_ID}")
-register_test_account "${ACCOUNT_2D}"
 
 REF_2D=$(gen_test_reference)
 
@@ -429,21 +463,23 @@ RESULT_2D=$(run_psql_capture "
   INSERT INTO subscriptions (accountId, planId, startsAt, endsAt)
   VALUES (${ACCOUNT_2D}, ${PLAN_ID}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '30 days');
   COMMIT;
-" 2>&1)
-log "Resultado (esperado error trigger diferido):"
-echo "${RESULT_2D}" | tee -a "${SALIDA_FILE}"
+" 2>&1) || true
+log "Resultado: $(echo "${RESULT_2D}" | head -1 | sed 's/^[[:space:]]*//')"
 
 SUBS_2D=$(run_psql "SELECT COUNT(*) FROM subscriptions WHERE accountId = ${ACCOUNT_2D};" | tail -n +3 | head -n 1 | xargs)
 PAYS_2D=$(run_psql "SELECT COUNT(*) FROM payments p JOIN subscriptions s ON s.subscriptionId = p.subscriptionId WHERE s.accountId = ${ACCOUNT_2D};" | tail -n +3 | head -n 1 | xargs)
 
-log "Cuenta ${ACCOUNT_2D}: ${SUBS_2D} suscripción(es), ${PAYS_2D} pago(s) (esperado: 0, 0 tras rollback por trigger)"
+log "Cuenta ${ACCOUNT_2D}: ${SUBS_2D} sub, ${PAYS_2D} pago (esperado: 0, 0 tras rollback por trigger)"
 
 if [[ "${SUBS_2D}" == "0" && "${PAYS_2D}" == "0" ]]; then
-  log "Variante 2d: PASS (trigger diferido rechazó commit sin pago)"
+  log "2d: PASS (trigger diferido rechazó commit sin pago)"
+  PRUEBA2_DETAILS+=("2d: PASS")
 elif echo "${RESULT_2D}" | grep -qi "no tiene pago asociado"; then
-  log "Variante 2d: PASS (trigger diferido funcionó, rollback automático)"
+  log "2d: PASS (trigger diferido funcionó, rollback automático)"
+  PRUEBA2_DETAILS+=("2d: PASS")
 else
-  log "Variante 2d: Resultado inesperado (puede ser OK si el trigger no es DEFERRABLE en esta BD)"
+  log "2d: SKIP (trigger no DEFERRABLE en esta BD o comportamiento distinto)"
+  PRUEBA2_DETAILS+=("2d: SKIP")
 fi
 
 log ""
@@ -455,16 +491,61 @@ else
   PRUEBA2_RESULT="FAIL"
 fi
 
+# ================================================================
+# PRUEBA 3: Consultas de verificación (verificaciones.sql)
+# ================================================================
 log ""
 log "================================================================="
-log "PRUEBA 3: Consultas de verificación (verificaciones.sql)"
+log "PRUEBA 3: Verificaciones de integridad"
 log "================================================================="
+
+PRUEBA3_PASS=true
+PRUEBA3_DETAILS=()
 
 log "Ejecutando verificaciones.sql..."
-run_psql "$(cat "${SCRIPT_DIR}/verificaciones.sql")" 2>&1 | tee -a "${SALIDA_FILE}"
+VERIF_OUTPUT=$(PGOPTIONS="-c timezone=UTC" psql -v ON_ERROR_STOP=1 -q -X -f "${SCRIPT_DIR}/verificaciones.sql" 2>&1)
+echo "${VERIF_OUTPUT}" | tee -a "${SALIDA_FILE}"
 
+# Verificar cada consulta
+if echo "${VERIF_OUTPUT}" | grep -q "Suscripciones superpuestas.*0 rows"; then
+  log "  Sin suscripciones superpuestas: PASS"
+  PRUEBA3_DETAILS+=("Superpuestas: PASS")
+else
+  log "  Sin suscripciones superpuestas: FAIL"
+  PRUEBA3_PASS=false
+  PRUEBA3_DETAILS+=("Superpuestas: FAIL")
+fi
+
+if echo "${VERIF_OUTPUT}" | grep -q "Suscripciones sin pago.*0 rows"; then
+  log "  Sin suscripciones sin pago: PASS"
+  PRUEBA3_DETAILS+=("Sin pago: PASS")
+else
+  log "  Sin suscripciones sin pago: FAIL"
+  PRUEBA3_PASS=false
+  PRUEBA3_DETAILS+=("Sin pago: FAIL")
+fi
+
+if echo "${VERIF_OUTPUT}" | grep -q "Pagos sin suscripci[oó]n.*0 rows"; then
+  log "  Sin pagos sin suscripción: PASS"
+  PRUEBA3_DETAILS+=("Sin suscripción: PASS")
+else
+  log "  Sin pagos sin suscripción: FAIL"
+  PRUEBA3_PASS=false
+  PRUEBA3_DETAILS+=("Sin suscripción: FAIL")
+fi
+
+if echo "${VERIF_OUTPUT}" | grep -q "IGUALES"; then
+  log "  Total subs = total pagos: PASS"
+  PRUEBA3_DETAILS+=("Totales: PASS")
+else
+  log "  Total subs = total pagos: FAIL"
+  PRUEBA3_PASS=false
+  PRUEBA3_DETAILS+=("Totales: FAIL")
+fi
+
+# Verificación específica de cuentas demo de esta corrida
 log ""
-log "--- Verificación específica de cuentas de prueba (demo_tx_*) ---"
+log "--- Cuentas demo_tx_* de esta corrida (${EMAIL_PREFIX}_*) ---"
 run_psql "
   SELECT a.accountId, a.email,
          COUNT(DISTINCT s.subscriptionId) AS n_subs,
@@ -472,50 +553,23 @@ run_psql "
   FROM accounts a
   LEFT JOIN subscriptions s ON s.accountId = a.accountId
   LEFT JOIN payments p      ON p.subscriptionId = s.subscriptionId
-  WHERE a.email LIKE 'demo_tx_%'
+  WHERE a.email LIKE '${EMAIL_PREFIX}_%@example.com'
   GROUP BY a.accountId, a.email
   ORDER BY a.accountId;
 " 2>&1 | tee -a "${SALIDA_FILE}"
-
-VERIF_OUTPUT=$(run_psql "$(cat "${SCRIPT_DIR}/verificaciones.sql")" 2>&1)
-PRUEBA3_PASS=true
-
-if echo "${VERIF_OUTPUT}" | grep -q "Suscripciones superpuestas.*0 rows"; then
-  log "Sin suscripciones superpuestas"
-else
-  log "Verificar suscripciones superpuestas manualmente"
-fi
-
-if echo "${VERIF_OUTPUT}" | grep -q "Suscripciones sin pago.*0 rows"; then
-  log "Sin suscripciones sin pago"
-else
-  log "Verificar suscripciones sin pago manualmente"
-  PRUEBA3_PASS=false
-fi
-
-if echo "${VERIF_OUTPUT}" | grep -q "Pagos sin suscripci[oó]n.*0 rows"; then
-  log "Sin pagos sin suscripción"
-else
-  log "Verificar pagos sin suscripción manualmente"
-  PRUEBA3_PASS=false
-fi
-
-if echo "${VERIF_OUTPUT}" | grep -q "IGUALES"; then
-  log "Total suscripciones = total pagos"
-else
-  log "Totales globales difieren"
-  PRUEBA3_PASS=false
-fi
 
 log ""
 if [[ "${PRUEBA3_PASS}" == "true" ]]; then
   log ">>> PRUEBA 3: PASS"
   PRUEBA3_RESULT="PASS"
 else
-  log ">>> PRUEBA 3: FAIL (revisar salida detallada)"
+  log ">>> PRUEBA 3: FAIL"
   PRUEBA3_RESULT="FAIL"
 fi
 
+# ================================================================
+# LIMPIEZA Y RESUMEN FINAL
+# ================================================================
 cleanup_test_data
 
 log ""
@@ -523,8 +577,11 @@ log "================================================================="
 log "RESUMEN FINAL"
 log "================================================================="
 log "Prueba 1 (Concurrencia):     ${PRUEBA1_RESULT}"
+for d in "${PRUEBA1_DETAILS[@]}"; do log "  ${d}"; done
 log "Prueba 2 (Atomicidad):       ${PRUEBA2_RESULT}"
+for d in "${PRUEBA2_DETAILS[@]}"; do log "  ${d}"; done
 log "Prueba 3 (Verificaciones):   ${PRUEBA3_RESULT}"
+for d in "${PRUEBA3_DETAILS[@]}"; do log "  ${d}"; done
 log "================================================================="
 
 OVERALL_PASS=true

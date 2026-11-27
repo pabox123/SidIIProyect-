@@ -32,11 +32,12 @@ Valida tres propiedades fundamentales del modelo relacional:
 
 ```bash
 # Opcion A: Variables individuales
-export PGHOST=localhost
+export PGHOST=ep-cold-silence-bd21ad3g.c-8.us-east-2.aws.neon.tech
 export PGPORT=5432
 export PGUSER=cineconecta_user
 export PGPASSWORD=tu_password
-export PGDATABASE=cineconecta_test
+export PGDATABASE=neondb
+export PGSSLMODE=require
 
 # Opcion B: DATABASE_URL
 export DATABASE_URL="postgresql://user:pass@host:port/dbname"
@@ -88,12 +89,49 @@ La salida se guarda duplicada en salida/demo_YYYYMMDD_HHMMSS.txt.
 
 ```
 pruebas_demo/
-├── demo_transaccional.sh    # Script principal (bash + psql)
-├── verificaciones.sql       # Consultas de verificacion (ejecutables a mano)
-├── README.md                # Este archivo
-└── salida/                  # Resultados de cada ejecucion
-    └── demo_20261125_143022.txt
+├── demo_transaccional.sh       # Script principal (bash + psql)
+├── limpieza_owner.sql          # Limpieza manual (ejecutar con usuario dueño)
+├── verificaciones.sql          # Consultas de verificacion (ejecutables a mano)
+├── README.md                   # Este archivo
+└── salida/                     # Resultados de cada ejecucion
+    └── demo_20261126_221437.txt
 ```
+
+## Limpieza de datos de prueba
+
+El script crea cuentas con email `demo_tx_<RUNID>_<aleatorio>@example.com` donde RUNID es un identificador unico por ejecucion.
+
+### Limpieza automatica (si el usuario tiene DELETE)
+
+Al inicio, el script verifica con `has_table_privilege` si el usuario actual (cineconecta_user) tiene privilegio DELETE en las tablas `accounts`, `profiles`, `subscriptions` y `payments`.
+
+- **Si tiene DELETE**: la limpieza se hace automaticamente al final (y en trap INT/TERM/ERR) en una sola transaccion y en orden de FKs (pagos -> suscripciones -> perfiles -> cuentas).
+- **Si NO tiene DELETE** (caso normal con cineconecta_user): el script NO intenta borrar. Al final imprime:
+
+```
+Limpieza pendiente: ejecutar pruebas_demo/limpieza_owner.sql con el usuario dueño.
+Cuentas demo_tx_ de esta corrida que quedan en la base: N
+```
+
+Esto **no** cambia el resultado PASS/FAIL de las pruebas.
+
+### Limpieza manual con limpieza_owner.sql
+
+Archivo: `pruebas_demo/limpieza_owner.sql`
+
+Ejecuta en el **SQL Editor de Neon** (o con psql como `cineconecta_owner`):
+
+```sql
+-- En SQL Editor de Neon:
+-- 1. Abre el proyecto -> SQL Editor
+-- 2. Pega el contenido de limpieza_owner.sql
+-- 3. Ejecuta (Run)
+
+-- O desde terminal con el usuario dueño:
+psql -U cineconecta_owner -d neondb -f pruebas_demo/limpieza_owner.sql
+```
+
+El script borra en orden de FKs y al final muestra `cuentas_demo_tx_restantes`. Debe ser 0.
 
 ## Ejecutar solo las verificaciones (sin pruebas de escritura)
 
@@ -111,12 +149,12 @@ PGOPTIONS="-c timezone=UTC" psql -f verificaciones.sql
 ### Prueba 1 - Concurrencia
 
 Version determinista:
-1. Crea cuenta nueva demo_tx_XXXXXX@example.com
+1. Crea cuenta nueva `demo_tx_<RUNID>_XXXXXX@example.com`
 2. Sesion A: BEGIN; sp_contratar_suscripcion(...); pg_sleep(3); COMMIT;
 3. 1 segundo despues, Sesion B: sp_contratar_suscripcion(...) (misma cuenta, distinta reference)
 4. Sesion B bloquea en FOR UPDATE de accounts, espera a que A haga COMMIT
 5. Al obtener el lock, Sesion B ve la suscripcion insertada por A y falla con:
-   ERROR: La cuenta X ya tiene una suscripcion vigente
+   `ERROR: La cuenta X ya tiene una suscripcion vigente`
 6. Resultado: 1 suscripcion, 1 pago
 
 Version estres (20 repeticiones):
@@ -130,7 +168,7 @@ Version estres (20 repeticiones):
 | 2a | Llama sp_contratar_suscripcion con reference que YA EXISTE en payments | Falla en INSERT payment (unicidad). Rollback total: 1 sub + 1 pago (el original), 0 nuevos |
 | 2b | Transaccion manual: INSERT subscription -> SELECT 1/0 (error) -> ROLLBACK | 0 sub, 0 pagos |
 | 2c | Sesion llama funcion + pg_sleep(10). Otra sesion hace pg_terminate_backend(pid) | 0 sub, 0 pagos (terminacion = rollback implicito) |
-| 2d | INSERT subscription (sin payment) -> COMMIT. Trigger diferido valida al commit | Falla con La suscripcion X no tiene pago asociado. 0 sub, 0 pagos |
+| 2d | INSERT subscription (sin payment) -> COMMIT. Trigger diferido valida al commit | Falla con `La suscripcion X no tiene pago asociado`. 0 sub, 0 pagos |
 
 ### Prueba 3 - Verificaciones
 
@@ -173,26 +211,14 @@ WHERE s.subscriptionId IS NULL;
 | Prueba 2b/2c: quedan registros | Transaccion no se revierte (autocommit on, o error no atrapado) |
 | Prueba 3: filas en superpuestas/sin pago | Datos base corruptos o triggers no funcionan |
 
-## Limpieza manual (si usaste --conservar)
-
-```sql
--- Ver cuentas de prueba
-SELECT accountId, email FROM accounts WHERE email LIKE 'demo_tx_%';
-
--- Borrar en orden (FKs)
-DELETE FROM payments WHERE subscriptionId IN (SELECT subscriptionId FROM subscriptions WHERE accountId = XXX);
-DELETE FROM subscriptions WHERE accountId = XXX;
-DELETE FROM profiles WHERE accountId = XXX;
-DELETE FROM accounts WHERE accountId = XXX;
-```
-
 ## Notas tecnicas
 
 - Zona horaria: Todas las conexiones usan PGOPTIONS="-c timezone=UTC" para consistencia temporal
-- Prefijo de prueba: Cuentas creadas con email demo_tx_<random>@example.com -- no colisionan con datos sinteticos base
+- Prefijo de prueba: Cuentas creadas con email `demo_tx_<RUNID>_<random>@example.com` -- no colisionan con datos sinteticos base ni entre corridas
 - Limpieza ordenada: Pagos -> Suscripciones -> Perfiles -> Cuentas (respeta FKs)
-- Trap ERR/INT/TERM: Si el script falla o se interrumpe, ejecuta limpieza automatica (salvo --conservar)
+- Trap ERR/INT/TERM: Si el script falla o se interrumpe, ejecuta limpieza automatica (salvo --conservar) o avisa de limpieza pendiente
 - Sin credenciales en disco: Solo variables de entorno; salida oculta passwords
+- set -e con blindaje: wait, grep y aritmetica no matan el script
 
 ## Solucion de problemas
 
@@ -200,7 +226,7 @@ DELETE FROM accounts WHERE accountId = XXX;
 Instala PostgreSQL client tools. En Windows: installer de PostgreSQL incluye psql.exe.
 
 ### CONFIRMAR_PRUEBAS=si no funciona en PowerShell
-Usa: $env:CONFIRMAR_PRUEBAS="si"; ./demo_transaccional.sh
+Usa: `$env:CONFIRMAR_PRUEBAS="si"; ./demo_transaccional.sh`
 O ejecuta desde Git Bash / WSL.
 
 ### Error de conexion
@@ -211,6 +237,9 @@ Ejecuta primero sql/01_postgresql_ddl.sql en la base de destino.
 
 ### Timeout en Prueba 2c (pg_terminate_backend)
 El script espera 1s antes de buscar el PID. Si la BD esta muy cargada, aumenta el sleep en el script (linea ~400).
+
+### El host contiene "-pooler"
+El script detecta pooler y se detiene. Usa el host directo (sin -pooler) porque pg_terminate_backend no funciona a traves del pooler de Neon.
 
 ---
 
