@@ -65,3 +65,4 @@ tmp/
 
 # Docker
 docker-compose.override.ymlpruebas_demo/salida/
+pruebas_demo/salida/
