@@ -1,0 +1,21 @@
+﻿                                                                   QUERY PLAN                                                                   
+------------------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=0.72..113.57 rows=1 width=12) (actual time=0.047..0.050 rows=1 loops=1)
+   Buffers: shared hit=7
+   ->  Index Scan using ix_profiles_account_active on profiles p  (cost=0.29..8.31 rows=1 width=8) (actual time=0.021..0.021 rows=1 loops=1)
+         Index Cond: ((accountid = 1) AND (isactive = 'Y'::bpchar))
+         Filter: (profileid = 1)
+         Rows Removed by Filter: 1
+         Buffers: shared hit=3
+   ->  Index Scan using ix_subs_account_start on subscriptions s  (cost=0.43..105.25 rows=1 width=12) (actual time=0.024..0.027 rows=1 loops=1)
+         Index Cond: ((accountid = 1) AND (startsat <= '2026-11-15 20:00:00'::timestamp without time zone))
+         Filter: ('2026-11-15 20:00:00'::timestamp without time zone < endsat)
+         Rows Removed by Filter: 34
+         Buffers: shared hit=4
+ Planning:
+   Buffers: shared hit=257
+ Planning Time: 0.691 ms
+ Execution Time: 0.087 ms
+(16 rows)
+
+

@@ -1,0 +1,25 @@
+﻿                                                                      QUERY PLAN                                                                      
+------------------------------------------------------------------------------------------------------------------------------------------------------
+ Nested Loop  (cost=4.92..127.25 rows=1 width=12) (actual time=0.073..0.074 rows=1 loops=1)
+   Buffers: shared hit=4 read=4
+   ->  Index Scan using ix_profiles_account_active on profiles p  (cost=0.29..8.31 rows=1 width=8) (actual time=0.019..0.020 rows=1 loops=1)
+         Index Cond: ((accountid = 1) AND (isactive = 'Y'::bpchar))
+         Filter: (profileid = 1)
+         Rows Removed by Filter: 1
+         Buffers: shared hit=3
+   ->  Bitmap Heap Scan on subscriptions s  (cost=4.63..118.92 rows=1 width=12) (actual time=0.049..0.050 rows=1 loops=1)
+         Recheck Cond: (accountid = 1)
+         Filter: ((startsat <= '2026-11-15 20:00:00'::timestamp without time zone) AND ('2026-11-15 20:00:00'::timestamp without time zone < endsat))
+         Rows Removed by Filter: 34
+         Heap Blocks: exact=1
+         Buffers: shared hit=1 read=4
+         ->  Bitmap Index Scan on ex_subs_no_overlap  (cost=0.00..4.63 rows=29 width=0) (actual time=0.041..0.041 rows=35 loops=1)
+               Index Cond: (accountid = 1)
+               Buffers: shared read=4
+ Planning:
+   Buffers: shared hit=224
+ Planning Time: 0.461 ms
+ Execution Time: 0.493 ms
+(20 rows)
+
+

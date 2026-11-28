@@ -1,0 +1,46 @@
+﻿                                                                                       QUERY PLAN                                                                                       
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=96074.83..96074.84 rows=3 width=47) (actual time=204.594..207.943 rows=3 loops=1)
+   Sort Key: (sum(pay.amount)) DESC
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=6163 read=62144
+   ->  GroupAggregate  (cost=92037.06..96074.81 rows=3 width=47) (actual time=201.498..207.915 rows=3 loops=1)
+         Group Key: pl.name
+         Buffers: shared hit=6160 read=62144
+         ->  Gather Merge  (cost=92037.06..95830.49 rows=32571 width=18) (actual time=198.444..205.473 rows=30000 loops=1)
+               Workers Planned: 2
+               Workers Launched: 2
+               Buffers: shared hit=6160 read=62144
+               ->  Sort  (cost=91037.03..91070.96 rows=13571 width=18) (actual time=193.642..194.034 rows=10000 loops=3)
+                     Sort Key: pl.name, s.subscriptionid
+                     Sort Method: quicksort  Memory: 870kB
+                     Buffers: shared hit=6160 read=62144
+                     Worker 0:  Sort Method: quicksort  Memory: 887kB
+                     Worker 1:  Sort Method: quicksort  Memory: 803kB
+                     ->  Hash Join  (cost=35317.20..90105.50 rows=13571 width=18) (actual time=50.681..186.488 rows=10000 loops=3)
+                           Hash Cond: (s.planid = pl.planid)
+                           Buffers: shared hit=6068 read=62144
+                           ->  Parallel Hash Join  (cost=35316.14..90018.48 rows=13571 width=15) (actual time=50.562..184.486 rows=10000 loops=3)
+                                 Hash Cond: (s.subscriptionid = pay.subscriptionid)
+                                 Buffers: shared hit=5969 read=62144
+                                 ->  Parallel Seq Scan on subscriptions s  (cost=0.00..52639.07 rows=786008 width=8) (actual time=0.027..66.743 rows=630000 loops=3)
+                                       Buffers: shared hit=225 read=44554
+                                 ->  Parallel Hash  (cost=35146.50..35146.50 rows=13571 width=11) (actual time=50.258..50.259 rows=10000 loops=3)
+                                       Buckets: 32768  Batches: 1  Memory Usage: 1696kB
+                                       Buffers: shared hit=5744 read=17590
+                                       ->  Parallel Seq Scan on payments pay  (cost=0.00..35146.50 rows=13571 width=11) (actual time=0.014..47.702 rows=10000 loops=3)
+                                             Filter: ((paidat >= '2025-01-01 00:00:00'::timestamp without time zone) AND (paidat < '2025-02-01 00:00:00'::timestamp without time zone))
+                                             Rows Removed by Filter: 620000
+                                             Buffers: shared hit=5744 read=17590
+                           ->  Hash  (cost=1.03..1.03 rows=3 width=11) (actual time=0.016..0.017 rows=3 loops=3)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on plans pl  (cost=0.00..1.03 rows=3 width=11) (actual time=0.010..0.011 rows=3 loops=3)
+                                       Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=294
+ Planning Time: 0.742 ms
+ Execution Time: 208.175 ms
+(41 rows)
+
+

@@ -1,0 +1,49 @@
+﻿                                                                                            QUERY PLAN                                                                                            
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=85626.74..85626.75 rows=3 width=47) (actual time=173.689..178.365 rows=3 loops=1)
+   Sort Key: (sum(pay.amount)) DESC
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=13321 read=44585
+   ->  GroupAggregate  (cost=81948.23..85626.72 rows=3 width=47) (actual time=169.494..178.336 rows=3 loops=1)
+         Group Key: pl.name
+         Buffers: shared hit=13318 read=44585
+         ->  Gather Merge  (cost=81948.23..85404.14 rows=29673 width=18) (actual time=163.335..175.142 rows=30000 loops=1)
+               Workers Planned: 2
+               Workers Launched: 2
+               Buffers: shared hit=13318 read=44585
+               ->  Sort  (cost=80948.20..80979.11 rows=12364 width=18) (actual time=160.522..161.336 rows=10000 loops=3)
+                     Sort Key: pl.name, s.subscriptionid
+                     Sort Method: quicksort  Memory: 909kB
+                     Buffers: shared hit=13318 read=44585
+                     Worker 0:  Sort Method: quicksort  Memory: 851kB
+                     Worker 1:  Sort Method: quicksort  Memory: 800kB
+                     ->  Hash Join  (cost=25327.18..80107.83 rows=12364 width=18) (actual time=15.238..153.155 rows=10000 loops=3)
+                           Hash Cond: (s.planid = pl.planid)
+                           Buffers: shared hit=13284 read=44585
+                           ->  Parallel Hash Join  (cost=25326.11..80028.46 rows=12364 width=15) (actual time=15.168..151.214 rows=10000 loops=3)
+                                 Hash Cond: (s.subscriptionid = pay.subscriptionid)
+                                 Buffers: shared hit=13185 read=44585
+                                 ->  Parallel Seq Scan on subscriptions s  (cost=0.00..52639.07 rows=786008 width=8) (actual time=0.022..67.173 rows=630000 loops=3)
+                                       Buffers: shared hit=194 read=44585
+                                 ->  Parallel Hash  (cost=25171.56..25171.56 rows=12364 width=11) (actual time=14.920..14.921 rows=10000 loops=3)
+                                       Buckets: 32768  Batches: 1  Memory Usage: 1728kB
+                                       Buffers: shared hit=12991
+                                       ->  Parallel Bitmap Heap Scan on payments pay  (cost=408.58..25171.56 rows=12364 width=11) (actual time=2.338..13.368 rows=10000 loops=3)
+                                             Recheck Cond: ((paidat >= '2025-01-01 00:00:00'::timestamp without time zone) AND (paidat < '2025-02-01 00:00:00'::timestamp without time zone))
+                                             Heap Blocks: exact=5282
+                                             Buffers: shared hit=12991
+                                             ->  Bitmap Index Scan on ix_payments_paidat  (cost=0.00..401.16 rows=29673 width=0) (actual time=2.475..2.476 rows=30000 loops=1)
+                                                   Index Cond: ((paidat >= '2025-01-01 00:00:00'::timestamp without time zone) AND (paidat < '2025-02-01 00:00:00'::timestamp without time zone))
+                                                   Buffers: shared hit=28
+                           ->  Hash  (cost=1.03..1.03 rows=3 width=11) (actual time=0.012..0.012 rows=3 loops=3)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on plans pl  (cost=0.00..1.03 rows=3 width=11) (actual time=0.008..0.008 rows=3 loops=3)
+                                       Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=327
+ Planning Time: 0.997 ms
+ Execution Time: 178.578 ms
+(44 rows)
+
+

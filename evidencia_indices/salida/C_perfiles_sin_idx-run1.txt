@@ -1,0 +1,17 @@
+﻿                                                              QUERY PLAN                                                              
+--------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=10.09..10.10 rows=1 width=25) (actual time=0.060..0.061 rows=2 loops=1)
+   Sort Key: profileid
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=4 read=2
+   ->  Index Scan using ux_profiles_name_ci on profiles  (cost=0.29..10.08 rows=1 width=25) (actual time=0.025..0.026 rows=2 loops=1)
+         Index Cond: (accountid = 1)
+         Filter: (isactive = 'Y'::bpchar)
+         Buffers: shared hit=1 read=2
+ Planning:
+   Buffers: shared hit=118
+ Planning Time: 0.279 ms
+ Execution Time: 0.114 ms
+(12 rows)
+
+

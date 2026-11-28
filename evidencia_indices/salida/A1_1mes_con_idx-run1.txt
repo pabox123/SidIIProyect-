@@ -1,0 +1,49 @@
+﻿                                                                                            QUERY PLAN                                                                                            
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ Sort  (cost=85626.74..85626.75 rows=3 width=47) (actual time=221.042..226.965 rows=3 loops=1)
+   Sort Key: (sum(pay.amount)) DESC
+   Sort Method: quicksort  Memory: 25kB
+   Buffers: shared hit=139 read=57767 written=10032
+   ->  GroupAggregate  (cost=81948.23..85626.72 rows=3 width=47) (actual time=217.512..226.936 rows=3 loops=1)
+         Group Key: pl.name
+         Buffers: shared hit=136 read=57767 written=10032
+         ->  Gather Merge  (cost=81948.23..85404.14 rows=29673 width=18) (actual time=214.414..224.375 rows=30000 loops=1)
+               Workers Planned: 2
+               Workers Launched: 2
+               Buffers: shared hit=136 read=57767 written=10032
+               ->  Sort  (cost=80948.20..80979.11 rows=12364 width=18) (actual time=210.336..210.783 rows=10000 loops=3)
+                     Sort Key: pl.name, s.subscriptionid
+                     Sort Method: quicksort  Memory: 842kB
+                     Buffers: shared hit=136 read=57767 written=10032
+                     Worker 0:  Sort Method: quicksort  Memory: 816kB
+                     Worker 1:  Sort Method: quicksort  Memory: 901kB
+                     ->  Hash Join  (cost=25327.18..80107.83 rows=12364 width=18) (actual time=54.160..203.000 rows=10000 loops=3)
+                           Hash Cond: (s.planid = pl.planid)
+                           Buffers: shared hit=102 read=57767 written=10032
+                           ->  Parallel Hash Join  (cost=25326.11..80028.46 rows=12364 width=15) (actual time=54.086..201.015 rows=10000 loops=3)
+                                 Hash Cond: (s.subscriptionid = pay.subscriptionid)
+                                 Buffers: shared hit=3 read=57767 written=10032
+                                 ->  Parallel Seq Scan on subscriptions s  (cost=0.00..52639.07 rows=786008 width=8) (actual time=0.019..71.083 rows=630000 loops=3)
+                                       Buffers: shared hit=2 read=44777 written=83
+                                 ->  Parallel Hash  (cost=25171.56..25171.56 rows=12364 width=11) (actual time=53.830..53.832 rows=10000 loops=3)
+                                       Buckets: 32768  Batches: 1  Memory Usage: 1696kB
+                                       Buffers: shared hit=1 read=12990 written=9949
+                                       ->  Parallel Bitmap Heap Scan on payments pay  (cost=408.58..25171.56 rows=12364 width=11) (actual time=1.060..50.676 rows=10000 loops=3)
+                                             Recheck Cond: ((paidat >= '2025-01-01 00:00:00'::timestamp without time zone) AND (paidat < '2025-02-01 00:00:00'::timestamp without time zone))
+                                             Heap Blocks: exact=4375
+                                             Buffers: shared hit=1 read=12990 written=9949
+                                             ->  Bitmap Index Scan on ix_payments_paidat  (cost=0.00..401.16 rows=29673 width=0) (actual time=2.014..2.015 rows=30000 loops=1)
+                                                   Index Cond: ((paidat >= '2025-01-01 00:00:00'::timestamp without time zone) AND (paidat < '2025-02-01 00:00:00'::timestamp without time zone))
+                                                   Buffers: shared read=28
+                           ->  Hash  (cost=1.03..1.03 rows=3 width=11) (actual time=0.011..0.012 rows=3 loops=3)
+                                 Buckets: 1024  Batches: 1  Memory Usage: 9kB
+                                 Buffers: shared hit=3
+                                 ->  Seq Scan on plans pl  (cost=0.00..1.03 rows=3 width=11) (actual time=0.007..0.008 rows=3 loops=3)
+                                       Buffers: shared hit=3
+ Planning:
+   Buffers: shared hit=326 read=1
+ Planning Time: 0.758 ms
+ Execution Time: 227.136 ms
+(44 rows)
+
+
